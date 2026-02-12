@@ -3,7 +3,7 @@ name: R
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 14 7 12 *'
+    - cron: '0 16 12 2 *'
 
 
 env:
@@ -78,4 +78,5 @@ jobs:
               echo "No changes to commit"
           fi
         env:
+
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
