@@ -3,7 +3,7 @@ name: Q
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 21 23 5 *'
+    - cron: '0 15 6 6 *'
 
 
 env:
