@@ -17,11 +17,41 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 import fastf1
+from fastf1.core import Telemetry
 import numpy as np
 import orjson
 import pandas as pd
 import psutil
 import requests
+
+
+# ---------------------------------------------------------------------------
+# Patch fastf1: handle missing 'Date' column in telemetry data.
+# In some 2026 season data, car_data/pos_data may be returned without the
+# 'Date' column.  merge_channels requires 'Date' to align the two DataFrames
+# by time.  This patch reconstructs 'Date' from 'SessionTime' + session.t0_date
+# when it is missing, preventing the KeyError: "None of ['Date'] are in the columns"
+# ---------------------------------------------------------------------------
+_original_merge_channels = Telemetry.merge_channels
+
+
+def _patched_merge_channels(self, other, frequency=None):
+    """Patched merge_channels that handles missing 'Date' column."""
+    # Try to get the session reference from self
+    session = getattr(self, 'session', None)
+
+    for df in (self, other):
+        if 'Date' not in df.columns:
+            if 'SessionTime' in df.columns and session is not None:
+                t0 = getattr(session, 't0_date', None)
+                if t0 is not None:
+                    df['Date'] = t0 + df['SessionTime']
+
+    return _original_merge_channels(self, other, frequency)
+
+
+Telemetry.merge_channels = _patched_merge_channels
+
 
 # ---------------------------------------------------------------------------
 # Constants & Configuration
@@ -30,7 +60,6 @@ import requests
 DEFAULT_YEAR = 2026
 # Keep exactly one uncommented event in this list.
 TARGET_EVENT_NAMES_LIST = [
-    
     # "Australian Grand Prix",
     # "Chinese Grand Prix",
     # "Japanese Grand Prix",
@@ -58,8 +87,7 @@ TARGET_EVENT_NAMES_LIST = [
 ]
 if len(TARGET_EVENT_NAMES_LIST) != 1:
     raise ValueError(
-        "Set exactly one active event in TARGET_EVENT_NAME "
-        "(comment all others)."
+        "Set exactly one active event in TARGET_EVENT_NAME (comment all others)."
     )
 TARGET_EVENT_NAME = TARGET_EVENT_NAMES_LIST[0]
 AVAILABLE_SESSIONS = [
@@ -84,8 +112,7 @@ TARGET_SESSIONS = [
 invalid_target_sessions = sorted(set(TARGET_SESSIONS) - set(AVAILABLE_SESSIONS))
 if invalid_target_sessions:
     raise ValueError(
-        "Invalid TARGET_SESSIONS value(s): "
-        + ", ".join(invalid_target_sessions)
+        "Invalid TARGET_SESSIONS value(s): " + ", ".join(invalid_target_sessions)
     )
 PROTO = "https"
 HOST = "api.multiviewer.app"
@@ -112,17 +139,19 @@ logger = logging.getLogger("session_extractor")
 logging.getLogger("fastf1").setLevel(logging.WARNING)
 logging.getLogger("fastf1").propagate = False
 
-_MISSING_TEXT_VALUES = frozenset({
-    "",
-    "null",
-    "nan",
-    "nat",
-    "none",
-    "inf",
-    "-inf",
-    "infinity",
-    "-infinity",
-})
+_MISSING_TEXT_VALUES = frozenset(
+    {
+        "",
+        "null",
+        "nan",
+        "nat",
+        "none",
+        "inf",
+        "-inf",
+        "infinity",
+        "-infinity",
+    }
+)
 _MISSING_TEXT_LIST = list(_MISSING_TEXT_VALUES)
 
 
@@ -304,7 +333,9 @@ def _session_rcm_to_column_lists(rcm_df: pd.DataFrame) -> Dict[str, list]:
     return out
 
 
-def _lap_weather_to_column_lists(laps: pd.DataFrame, weather_df: pd.DataFrame = None) -> Dict[str, list]:
+def _lap_weather_to_column_lists(
+    laps: pd.DataFrame, weather_df: pd.DataFrame = None
+) -> Dict[str, list]:
     n_laps = len(laps)
     if n_laps == 0:
         return {k: [] for k in LAP_WEATHER_KEYS}
@@ -576,9 +607,7 @@ class SeasonSessionExtractor:
             ]
             return {"drivers": drivers}
         except Exception as e:
-            logger.error(
-                f"Error getting drivers for {event_name} {session_name}: {e}"
-            )
+            logger.error(f"Error getting drivers for {event_name} {session_name}: {e}")
             return {"drivers": []}
 
     def _build_driver_info(
@@ -683,19 +712,42 @@ class SeasonSessionExtractor:
             return {
                 k: []
                 for k in (
-                    "time", "lap", "compound", "stint",
-                    "s1", "s2", "s3", "life", "pos", "status", "pb",
-                    "sesT", "drv", "dNum", "pout", "pin",
-                    "s1T", "s2T", "s3T", "vi1", "vi2",
-                    "vfl", "vst", "fresh", "team", "lST",
-                    "lSD", "del", "delR", "ff1G", "iacc",
+                    "time",
+                    "lap",
+                    "compound",
+                    "stint",
+                    "s1",
+                    "s2",
+                    "s3",
+                    "life",
+                    "pos",
+                    "status",
+                    "pb",
+                    "sesT",
+                    "drv",
+                    "dNum",
+                    "pout",
+                    "pin",
+                    "s1T",
+                    "s2T",
+                    "s3T",
+                    "vi1",
+                    "vi2",
+                    "vfl",
+                    "vst",
+                    "fresh",
+                    "team",
+                    "lST",
+                    "lSD",
+                    "del",
+                    "delR",
+                    "ff1G",
+                    "iacc",
                     *LAP_WEATHER_KEYS,
                 )
             }
 
-    def get_circuit_info(
-        self, event_name: str, session_name: str
-    ) -> Optional[Dict]:
+    def get_circuit_info(self, event_name: str, session_name: str) -> Optional[Dict]:
         cache_key = f"{self.year}-{event_name}-{session_name}"
         if cache_key in self._circuit_cache:
             return self._circuit_cache[cache_key]
@@ -713,7 +765,9 @@ class SeasonSessionExtractor:
                     "Y": _series_to_json_list(corners["Y"]),
                     "Angle": _series_to_json_list(corners["Angle"]),
                     "Distance": _series_to_json_list(corners["Distance"]),
-                    "Rotation": _scalar_to_json_primitive_or_none(circuit_info.rotation),
+                    "Rotation": _scalar_to_json_primitive_or_none(
+                        circuit_info.rotation
+                    ),
                 }
                 self._circuit_cache[cache_key] = result
                 return result
@@ -731,9 +785,7 @@ class SeasonSessionExtractor:
                     self._circuit_cache[cache_key] = result
                     return result
 
-            logger.warning(
-                f"Could not get corner data for {event_name} {session_name}"
-            )
+            logger.warning(f"Could not get corner data for {event_name} {session_name}")
             return None
         except Exception as e:
             logger.error(
@@ -826,15 +878,15 @@ class SeasonSessionExtractor:
                 LapNumber=driver_laps["LapNumber"].astype(int)
             )
 
-            laptimes = self.laps_data(driver, f1session, driver_laps, session_weather_df)
+            laptimes = self.laps_data(
+                driver, f1session, driver_laps, session_weather_df
+            )
             _write_json(f"{driver_dir}/laptimes.json", laptimes)
 
             lap_numbers = driver_laps["LapNumber"].tolist()
 
             existing = (
-                set(os.listdir(driver_dir))
-                if os.path.isdir(driver_dir)
-                else set()
+                set(os.listdir(driver_dir)) if os.path.isdir(driver_dir) else set()
             )
 
             for lap_number in lap_numbers:
@@ -842,7 +894,12 @@ class SeasonSessionExtractor:
                 if fname in existing:
                     continue
                 self._process_single_lap(
-                    driver, lap_number, driver_dir, driver_laps, event_name, session_name
+                    driver,
+                    lap_number,
+                    driver_dir,
+                    driver_laps,
+                    event_name,
+                    session_name,
                 )
 
         except Exception as e:
@@ -932,8 +989,6 @@ class SeasonSessionExtractor:
 # ======================================================================
 # Data Availability
 # ======================================================================
-
-
 
 
 def is_session_data_available(
