@@ -24,148 +24,13 @@ import psutil
 import requests
 
 # ---------------------------------------------------------------------------
-# fastf1 monkey patches
-# ---------------------------------------------------------------------------
-# Two related bugs in fastf1 3.8.1 cause "None of ['Date'] are in the columns"
-# to be raised from Laps.get_telemetry() when an individual lap falls inside a
-# gap in the live-timing data (e.g. transient F1 timing feed dropouts, which
-# are common in 2026 race sessions for some drivers).
-#
-# Bug 1: Telemetry.slice_by_time returns an empty Telemetry() *with no
-#        columns* when the time slice has no data points.  That empty frame
-#        has no 'Date' column, so the downstream merge_channels() call
-#        explodes with the exact error reported by the user.
-#
-# Bug 2: Laps.get_telemetry assumes both pos_data and car_data are
-#        non-empty.  When pos_data is empty (the slice_by_lap above returns
-#        an empty Telemetry with no columns) the merge of an empty
-#        pos_data with car_data fails in merge_channels() with the same
-#        "None of ['Date'] are in the columns" error.
-#
-# We patch both:
-#   - slice_by_time to return an empty frame that preserves the original
-#     columns (so merge_channels can at least set_index('Date') without
-#     raising).
-#   - Laps.get_telemetry to fall back to car_data-only telemetry (with
-#     NaN X/Y/Z/Status and the same Distance/RelativeDistance/DriverAhead
-#     columns a full telemetry object would have) whenever pos_data is
-#     empty for a given lap.  This way every lap still produces a
-#     well-formed JSON file on disk, even when live position data is
-#     missing.
-# ---------------------------------------------------------------------------
-from fastf1.core import Laps as _Laps, Telemetry as _Telemetry
-
-
-def _patched_slice_by_time(
-    self,
-    start_time,
-    end_time,
-    pad: int = 0,
-    pad_side: str = "both",
-    interpolate_edges: bool = False,
-):
-    """Drop-in replacement for Telemetry.slice_by_time.
-
-    The upstream implementation returns ``Telemetry().__finalize__(self)``
-    when the time slice has no matching rows.  That empty frame has *no*
-    columns, which then breaks any caller that assumes ``'Date'`` exists
-    (e.g. :meth:`Telemetry.merge_channels`).
-
-    We return an empty frame that preserves the original column layout so
-    the rest of the pipeline can still operate on a "valid" but empty
-    Telemetry object.
-    """
-    if interpolate_edges:
-        edges = _Telemetry(
-            {
-                "SessionTime": (start_time, end_time),
-                "Date": (
-                    start_time + self.session.t0_date,
-                    end_time + self.session.t0_date,
-                ),
-            },
-            session=self.session,
-        ).__finalize__(self)
-        d = self.merge_channels(edges, frequency="original")
-    else:
-        d = self.copy()
-
-    sel = ((d["SessionTime"] <= end_time) & (d["SessionTime"] >= start_time))
-    if np.any(sel):
-        data_slice = d.slice_by_mask(sel, pad, pad_side)
-        if "Time" in data_slice.columns:
-            data_slice.loc[:, "Time"] = data_slice["SessionTime"] - start_time
-        return data_slice
-
-    # Empty slice: keep the original column layout (and metadata) so that
-    # downstream operations like merge_channels/reset_index do not blow up
-    # with "None of ['Date'] are in the columns".
-    return self.iloc[0:0].copy()
-
-
-def _patched_laps_get_telemetry(self, *, frequency=None):
-    """Drop-in replacement for Laps.get_telemetry.
-
-    When the position data for a given driver has a gap that covers the
-    requested lap (e.g. F1 timing feed dropouts), ``get_pos_data`` returns
-    an empty Telemetry with no columns.  The original implementation then
-    crashes inside ``merge_channels``.
-
-    In that case we return the car_data slice, augmented with the missing
-    pos-derived columns (X/Y/Z/Status filled with NaN) and the computed
-    columns (Distance/RelativeDistance/DriverAhead/DistanceToDriverAhead)
-    that the rest of the pipeline expects.  This guarantees that every
-    lap still produces a JSON file on disk.
-    """
-    pos_data = self.get_pos_data(pad=1, pad_side="both")
-    car_data = self.get_car_data(pad=1, pad_side="both")
-
-    if pos_data.empty or "Date" not in pos_data.columns:
-        # Position data is missing for this lap -- degrade gracefully.
-        if car_data.empty or "Date" not in car_data.columns:
-            return car_data
-        for col in ("X", "Y", "Z", "Status"):
-            if col not in car_data.columns:
-                car_data[col] = np.nan
-        if "Distance" not in car_data.columns:
-            try:
-                car_data = car_data.add_distance()
-            except Exception:
-                car_data["Distance"] = np.nan
-        if "RelativeDistance" not in car_data.columns:
-            try:
-                car_data = car_data.add_relative_distance()
-            except Exception:
-                car_data["RelativeDistance"] = np.nan
-        if "DriverAhead" not in car_data.columns:
-            car_data["DriverAhead"] = ""
-        if "DistanceToDriverAhead" not in car_data.columns:
-            car_data["DistanceToDriverAhead"] = np.float64(0.0)
-        return car_data
-
-    drv_ahead = (
-        car_data.iloc[1:-1]
-        .add_driver_ahead()
-        .loc[:, ("DriverAhead", "DistanceToDriverAhead", "Date", "Time", "SessionTime")]
-    )
-
-    car_data = car_data.add_distance().add_relative_distance()
-    car_data = car_data.merge_channels(drv_ahead, frequency=frequency)
-    merged = pos_data.merge_channels(car_data, frequency=frequency)
-    return merged.slice_by_lap(self, interpolate_edges=True)
-
-
-_Telemetry.slice_by_time = _patched_slice_by_time
-_Laps.get_telemetry = _patched_laps_get_telemetry
-
-# ---------------------------------------------------------------------------
 # Constants & Configuration
 # ---------------------------------------------------------------------------
-
 
 DEFAULT_YEAR = 2026
 # Keep exactly one uncommented event in this list.
 TARGET_EVENT_NAMES_LIST = [
+    
     # "Australian Grand Prix",
     # "Chinese Grand Prix",
     # "Japanese Grand Prix",
@@ -173,7 +38,8 @@ TARGET_EVENT_NAMES_LIST = [
     # "Saudi Arabian Grand Prix",
     # "Miami Grand Prix",
     # "Emilia Romagna Grand Prix",
-    "Monaco Grand Prix",
+    # "Monaco Grand Prix",
+    "Barcelona Grand Prix",
     # "Spanish Grand Prix",
     # "Canadian Grand Prix",
     # "Austrian Grand Prix",
@@ -193,7 +59,8 @@ TARGET_EVENT_NAMES_LIST = [
 ]
 if len(TARGET_EVENT_NAMES_LIST) != 1:
     raise ValueError(
-        "Set exactly one active event in TARGET_EVENT_NAME (comment all others)."
+        "Set exactly one active event in TARGET_EVENT_NAME "
+        "(comment all others)."
     )
 TARGET_EVENT_NAME = TARGET_EVENT_NAMES_LIST[0]
 AVAILABLE_SESSIONS = [
@@ -218,7 +85,8 @@ TARGET_SESSIONS = [
 invalid_target_sessions = sorted(set(TARGET_SESSIONS) - set(AVAILABLE_SESSIONS))
 if invalid_target_sessions:
     raise ValueError(
-        "Invalid TARGET_SESSIONS value(s): " + ", ".join(invalid_target_sessions)
+        "Invalid TARGET_SESSIONS value(s): "
+        + ", ".join(invalid_target_sessions)
     )
 PROTO = "https"
 HOST = "api.multiviewer.app"
@@ -245,19 +113,17 @@ logger = logging.getLogger("session_extractor")
 logging.getLogger("fastf1").setLevel(logging.WARNING)
 logging.getLogger("fastf1").propagate = False
 
-_MISSING_TEXT_VALUES = frozenset(
-    {
-        "",
-        "null",
-        "nan",
-        "nat",
-        "none",
-        "inf",
-        "-inf",
-        "infinity",
-        "-infinity",
-    }
-)
+_MISSING_TEXT_VALUES = frozenset({
+    "",
+    "null",
+    "nan",
+    "nat",
+    "none",
+    "inf",
+    "-inf",
+    "infinity",
+    "-infinity",
+})
 _MISSING_TEXT_LIST = list(_MISSING_TEXT_VALUES)
 
 
@@ -439,9 +305,7 @@ def _session_rcm_to_column_lists(rcm_df: pd.DataFrame) -> Dict[str, list]:
     return out
 
 
-def _lap_weather_to_column_lists(
-    laps: pd.DataFrame, weather_df: pd.DataFrame = None
-) -> Dict[str, list]:
+def _lap_weather_to_column_lists(laps: pd.DataFrame, weather_df: pd.DataFrame = None) -> Dict[str, list]:
     n_laps = len(laps)
     if n_laps == 0:
         return {k: [] for k in LAP_WEATHER_KEYS}
@@ -713,7 +577,9 @@ class SeasonSessionExtractor:
             ]
             return {"drivers": drivers}
         except Exception as e:
-            logger.error(f"Error getting drivers for {event_name} {session_name}: {e}")
+            logger.error(
+                f"Error getting drivers for {event_name} {session_name}: {e}"
+            )
             return {"drivers": []}
 
     def _build_driver_info(
@@ -818,42 +684,19 @@ class SeasonSessionExtractor:
             return {
                 k: []
                 for k in (
-                    "time",
-                    "lap",
-                    "compound",
-                    "stint",
-                    "s1",
-                    "s2",
-                    "s3",
-                    "life",
-                    "pos",
-                    "status",
-                    "pb",
-                    "sesT",
-                    "drv",
-                    "dNum",
-                    "pout",
-                    "pin",
-                    "s1T",
-                    "s2T",
-                    "s3T",
-                    "vi1",
-                    "vi2",
-                    "vfl",
-                    "vst",
-                    "fresh",
-                    "team",
-                    "lST",
-                    "lSD",
-                    "del",
-                    "delR",
-                    "ff1G",
-                    "iacc",
+                    "time", "lap", "compound", "stint",
+                    "s1", "s2", "s3", "life", "pos", "status", "pb",
+                    "sesT", "drv", "dNum", "pout", "pin",
+                    "s1T", "s2T", "s3T", "vi1", "vi2",
+                    "vfl", "vst", "fresh", "team", "lST",
+                    "lSD", "del", "delR", "ff1G", "iacc",
                     *LAP_WEATHER_KEYS,
                 )
             }
 
-    def get_circuit_info(self, event_name: str, session_name: str) -> Optional[Dict]:
+    def get_circuit_info(
+        self, event_name: str, session_name: str
+    ) -> Optional[Dict]:
         cache_key = f"{self.year}-{event_name}-{session_name}"
         if cache_key in self._circuit_cache:
             return self._circuit_cache[cache_key]
@@ -871,9 +714,7 @@ class SeasonSessionExtractor:
                     "Y": _series_to_json_list(corners["Y"]),
                     "Angle": _series_to_json_list(corners["Angle"]),
                     "Distance": _series_to_json_list(corners["Distance"]),
-                    "Rotation": _scalar_to_json_primitive_or_none(
-                        circuit_info.rotation
-                    ),
+                    "Rotation": _scalar_to_json_primitive_or_none(circuit_info.rotation),
                 }
                 self._circuit_cache[cache_key] = result
                 return result
@@ -891,7 +732,9 @@ class SeasonSessionExtractor:
                     self._circuit_cache[cache_key] = result
                     return result
 
-            logger.warning(f"Could not get corner data for {event_name} {session_name}")
+            logger.warning(
+                f"Could not get corner data for {event_name} {session_name}"
+            )
             return None
         except Exception as e:
             logger.error(
@@ -984,15 +827,15 @@ class SeasonSessionExtractor:
                 LapNumber=driver_laps["LapNumber"].astype(int)
             )
 
-            laptimes = self.laps_data(
-                driver, f1session, driver_laps, session_weather_df
-            )
+            laptimes = self.laps_data(driver, f1session, driver_laps, session_weather_df)
             _write_json(f"{driver_dir}/laptimes.json", laptimes)
 
             lap_numbers = driver_laps["LapNumber"].tolist()
 
             existing = (
-                set(os.listdir(driver_dir)) if os.path.isdir(driver_dir) else set()
+                set(os.listdir(driver_dir))
+                if os.path.isdir(driver_dir)
+                else set()
             )
 
             for lap_number in lap_numbers:
@@ -1000,12 +843,7 @@ class SeasonSessionExtractor:
                 if fname in existing:
                     continue
                 self._process_single_lap(
-                    driver,
-                    lap_number,
-                    driver_dir,
-                    driver_laps,
-                    event_name,
-                    session_name,
+                    driver, lap_number, driver_dir, driver_laps, event_name, session_name
                 )
 
         except Exception as e:
@@ -1095,6 +933,8 @@ class SeasonSessionExtractor:
 # ======================================================================
 # Data Availability
 # ======================================================================
+
+
 
 
 def is_session_data_available(
