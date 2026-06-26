@@ -3,7 +3,7 @@ name: R
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 14 14 6 *'
+    - cron: '30 14 28 6 *'
 
 
 env:
