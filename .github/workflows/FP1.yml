@@ -3,7 +3,7 @@ name: FP1
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 12 26 6 *'
+    - cron: '30 12 3 7 *'
 
 
 env:
