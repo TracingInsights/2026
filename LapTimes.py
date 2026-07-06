@@ -78,9 +78,9 @@ TARGET_SESSIONS = [
     "Practice 2",
     "Practice 3",
     "Qualifying",
-    # "Sprint Qualifying",
-    # "Sprint",
-    # "Race",
+    "Sprint Qualifying",
+    "Sprint",
+    "Race",
 ]
 invalid_target_sessions = sorted(set(TARGET_SESSIONS) - set(AVAILABLE_SESSIONS))
 if invalid_target_sessions:
