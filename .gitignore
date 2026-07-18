@@ -2,7 +2,7 @@
 __pycache__/
 *.py[codz]
 *$py.class
-
+fastf1_http_cache.sqlite
 *.sqlite
 *.ff1pkl
 
