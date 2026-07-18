@@ -5,6 +5,7 @@ __pycache__/
 fastf1_http_cache.sqlite
 *.sqlite
 *.ff1pkl
+.freebuff/
 
 # C extensions
 *.so
