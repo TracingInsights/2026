@@ -6,6 +6,9 @@ Extracts laptimes.json per driver from non-testing F1 season sessions.
 Output directory:
 {event_name}/{session_name}/{driver}/laptimes.json
 
+Per session also writes session_laptimes.json (merged from all drivers'
+laptimes.json, alphabetical driver order).
+
 Data sources:
 - FastF1: base lap data, weather, sector times, tyre info
 - Ergast (Race only): overwrites LapTime with Ergast's official lap times
@@ -304,6 +307,20 @@ _LAP_WEATHER_COL_MAP = (
 )
 LAP_WEATHER_KEYS = tuple(k for k, _ in _LAP_WEATHER_COL_MAP)
 
+# Fixed column order for per-driver / session laptimes (matches laps_data).
+# Qualifying sessions append "qs" via _laptimes_keys_for_session().
+_LAPTIMES_KEYS = (
+    "time", "lap", "compound", "stint",
+    "s1", "s2", "s3",
+    "ms1", "ms2", "ms3",
+    "life", "pos", "status", "pb",
+    "sesT", "drv", "dNum", "pout", "pin",
+    "s1T", "s2T", "s3T", "vi1", "vi2",
+    "vfl", "vst", "fresh", "team", "lST",
+    "lSD", "del", "delR", "ff1G", "iacc",
+    *LAP_WEATHER_KEYS,
+)
+
 
 def _lap_weather_to_column_lists(
     laps: pd.DataFrame, weather_df: pd.DataFrame = None
@@ -355,6 +372,12 @@ def _qualifying_session_name(
     if normalized in ("sprint qualifying", "sprint shootout"):
         return ("SQ1", "SQ2", "SQ3")
     return None
+
+
+def _laptimes_keys_for_session(session_name: Optional[str]) -> Tuple[str, ...]:
+    if _qualifying_session_name(session_name) is not None:
+        return _LAPTIMES_KEYS + ("qs",)
+    return _LAPTIMES_KEYS
 
 
 def _laps_to_quali_segment(
@@ -1030,51 +1053,29 @@ class SeasonSessionExtractor:
 
         except Exception as e:
             logger.error("Error getting lap data for %s: %s", driver, e)
-            empty_keys = (
-                "time",
-                "lap",
-                "compound",
-                "stint",
-                "s1",
-                "s2",
-                "s3",
-                "ms1",
-                "ms2",
-                "ms3",
-                "life",
-                "pos",
-                "status",
-                "pb",
-                "sesT",
-                "drv",
-                "dNum",
-                "pout",
-                "pin",
-                "s1T",
-                "s2T",
-                "s3T",
-                "vi1",
-                "vi2",
-                "vfl",
-                "vst",
-                "fresh",
-                "team",
-                "lST",
-                "lSD",
-                "del",
-                "delR",
-                "ff1G",
-                "iacc",
-                *LAP_WEATHER_KEYS,
-            )
-            empty_lap_data = {k: [] for k in empty_keys}
-            if _qualifying_session_name(session_name) is not None:
-                empty_lap_data["qs"] = []
-            return empty_lap_data
+            return {k: [] for k in _laptimes_keys_for_session(session_name)}
 
     # ------------------------------------------------------------------
     # Session processing
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _merge_driver_laptimes(
+        merged: Optional[Dict[str, list]],
+        laptimes: Dict[str, list],
+        offset: int,
+        total_laps: int,
+        keys: Tuple[str, ...],
+    ) -> Tuple[Dict[str, list], int]:
+        """Copy one driver's column arrays into a preallocated session merge."""
+        n = len(laptimes["lap"])
+        if merged is None:
+            merged = {key: [None] * total_laps for key in keys}
+
+        end = offset + n
+        for key in keys:
+            merged[key][offset:end] = laptimes[key]
+        return merged, end
 
     def process_event_session(self, event_name: str, session_name: str) -> None:
         label = f"{event_name} - {session_name}"
@@ -1091,7 +1092,8 @@ class SeasonSessionExtractor:
                 logger.warning("No lap data for %s", label)
                 return
 
-            drivers = laps["Driver"].dropna().unique().tolist()
+            # Alphabetical order matches session_laptimes concatenation order.
+            drivers = sorted(laps["Driver"].dropna().unique().tolist())
             if not drivers:
                 logger.warning("No drivers found for %s", label)
                 return
@@ -1108,7 +1110,19 @@ class SeasonSessionExtractor:
                 event_name, session_name, f1session, laps
             )
 
+            laptimes_keys = _laptimes_keys_for_session(session_name)
+
+            # Pre-count laps so session_laptimes can be allocated once.
+            # Race may grow past this if Ergast inserts missing laps; slice
+            # assignment extends the buffer and we trim/keep the final length.
+            driver_set = set(drivers)
+            total_laps = int(laps["Driver"].isin(driver_set).sum())
+
+            session_laptimes: Optional[Dict[str, list]] = None
+            offset = 0
+            merged_drivers = 0
             total_drivers = len(drivers)
+
             for i, driver in enumerate(drivers, 1):
                 logger.info("Processing driver %s (%d/%d)", driver, i, total_drivers)
                 driver_dir = f"{base_dir}/{driver}"
@@ -1128,6 +1142,30 @@ class SeasonSessionExtractor:
                     openf1_session_key=openf1_session_key,
                 )
                 _write_json(f"{driver_dir}/laptimes.json", laptimes)
+
+                n = len(laptimes["lap"])
+                if n == 0:
+                    continue
+                session_laptimes, offset = self._merge_driver_laptimes(
+                    session_laptimes, laptimes, offset, total_laps, laptimes_keys
+                )
+                merged_drivers += 1
+
+            if session_laptimes is None or offset == 0:
+                logger.warning("No driver laptimes to merge for %s", label)
+            else:
+                if offset < total_laps:
+                    for key in laptimes_keys:
+                        del session_laptimes[key][offset:]
+                out_path = f"{base_dir}/session_laptimes.json"
+                _write_json(out_path, session_laptimes)
+                logger.info(
+                    "%s: wrote %s (%d drivers, %d total laps)",
+                    label,
+                    out_path,
+                    merged_drivers,
+                    offset,
+                )
 
         except Exception as e:
             logger.error("Error processing %s: %s", label, e)

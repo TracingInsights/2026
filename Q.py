@@ -4,10 +4,13 @@ Season Session Telemetry Extraction Script
 Extracts telemetry data from non-testing F1 season sessions.
 
 Output directory:
-{year}/{event_name}/{session_name}/
+{event_name}/{session_name}/
+
+Per session also writes session_laptimes.json (merged from all drivers'
+laptimes.json, alphabetical driver order).
 
 Standalone cache:
-cache_session
+cache
 """
 
 import gc
@@ -268,6 +271,18 @@ _LAP_WEATHER_COL_MAP = (
     ("wWS", "WindSpeed"),
 )
 LAP_WEATHER_KEYS = tuple(k for k, _ in _LAP_WEATHER_COL_MAP)
+
+# Fixed column order for per-driver / session laptimes (matches laps_data).
+_LAPTIMES_KEYS = (
+    "time", "lap", "compound", "stint",
+    "s1", "s2", "s3", "life", "pos", "status", "pb",
+    "sesT", "drv", "dNum", "pout", "pin",
+    "s1T", "s2T", "s3T", "vi1", "vi2",
+    "vfl", "vst", "fresh", "team", "lST",
+    "lSD", "del", "delR", "ff1G", "iacc",
+    "qs",
+    *LAP_WEATHER_KEYS,
+)
 
 _RCM_COL_MAP = (
     ("time", "Time"),
@@ -741,44 +756,7 @@ class SeasonSessionExtractor:
             }
         except Exception as e:
             logger.error(f"Error getting lap data for {driver}: {e}")
-            return {
-                k: []
-                for k in (
-                    "time",
-                    "lap",
-                    "compound",
-                    "stint",
-                    "s1",
-                    "s2",
-                    "s3",
-                    "life",
-                    "pos",
-                    "status",
-                    "pb",
-                    "sesT",
-                    "drv",
-                    "dNum",
-                    "pout",
-                    "pin",
-                    "s1T",
-                    "s2T",
-                    "s3T",
-                    "vi1",
-                    "vi2",
-                    "vfl",
-                    "vst",
-                    "fresh",
-                    "team",
-                    "lST",
-                    "lSD",
-                    "del",
-                    "delR",
-                    "ff1G",
-                    "iacc",
-                    "qs",
-                    *LAP_WEATHER_KEYS,
-                )
-            }
+            return {k: [] for k in _LAPTIMES_KEYS}
 
     def get_circuit_info(self, event_name: str, session_name: str) -> Optional[Dict]:
         cache_key = f"{self.year}-{event_name}-{session_name}"
@@ -888,6 +866,23 @@ class SeasonSessionExtractor:
             logger.error(f"Error processing lap {lap_number} for {driver}: {e}")
             return False
 
+    @staticmethod
+    def _merge_driver_laptimes(
+        merged: Optional[Dict[str, list]],
+        laptimes: Dict[str, list],
+        offset: int,
+        total_laps: int,
+    ) -> Tuple[Dict[str, list], int]:
+        """Copy one driver's column arrays into a preallocated session merge."""
+        n = len(laptimes["lap"])
+        if merged is None:
+            merged = {key: [None] * total_laps for key in _LAPTIMES_KEYS}
+
+        end = offset + n
+        for key in _LAPTIMES_KEYS:
+            merged[key][offset:end] = laptimes[key]
+        return merged, end
+
     def process_driver(
         self,
         event_name: str,
@@ -896,7 +891,7 @@ class SeasonSessionExtractor:
         base_dir: str,
         f1session: fastf1.core.Session = None,
         session_weather_df: pd.DataFrame = None,
-    ) -> None:
+    ) -> Optional[Dict[str, list]]:
         driver_dir = f"{base_dir}/{driver}"
         os.makedirs(driver_dir, exist_ok=True)
 
@@ -935,8 +930,11 @@ class SeasonSessionExtractor:
                     session_name,
                 )
 
+            return laptimes
+
         except Exception as e:
             logger.error(f"Error processing driver {driver}: {e}")
+            return None
 
     def process_event_session(self, event_name: str, session_name: str) -> None:
         label = f"{event_name} - {session_name}"
@@ -963,7 +961,8 @@ class SeasonSessionExtractor:
             if corner_info:
                 _write_json(f"{base_dir}/corners.json", corner_info)
 
-            drivers = [d["driver"] for d in drivers_info.get("drivers", [])]
+            # Alphabetical order matches session_laptimes concatenation order.
+            drivers = sorted(d["driver"] for d in drivers_info.get("drivers", []))
 
             if not drivers:
                 logger.warning(f"No drivers found for {label}")
@@ -976,16 +975,48 @@ class SeasonSessionExtractor:
                 except Exception:
                     pass
 
+            # Pre-count laps so session_laptimes can be allocated once.
+            driver_set = set(drivers)
+            lap_drivers = f1session.laps["Driver"]
+            total_laps = int(lap_drivers.isin(driver_set).sum())
+
+            session_laptimes: Optional[Dict[str, list]] = None
+            offset = 0
+            merged_drivers = 0
             total_drivers = len(drivers)
+
             for i, driver in enumerate(drivers, 1):
                 logger.info(f"Processing driver {driver} ({i}/{total_drivers})")
-                self.process_driver(
+                laptimes = self.process_driver(
                     event_name,
                     session_name,
                     driver,
                     base_dir,
                     f1session,
                     session_weather_df,
+                )
+                if laptimes is None:
+                    continue
+                n = len(laptimes["lap"])
+                if n == 0:
+                    continue
+                session_laptimes, offset = self._merge_driver_laptimes(
+                    session_laptimes, laptimes, offset, total_laps
+                )
+                merged_drivers += 1
+
+            if session_laptimes is None or offset == 0:
+                logger.warning(f"No driver laptimes to merge for {label}")
+            else:
+                # Trim if any drivers were skipped after the pre-count.
+                if offset != total_laps:
+                    for key in _LAPTIMES_KEYS:
+                        del session_laptimes[key][offset:]
+                out_path = f"{base_dir}/session_laptimes.json"
+                _write_json(out_path, session_laptimes)
+                logger.info(
+                    f"{label}: wrote {out_path} "
+                    f"({merged_drivers} drivers, {offset} total laps)"
                 )
         except Exception as e:
             logger.error(f"Error processing {label}: {e}")
