@@ -30,7 +30,7 @@ import requests
 DEFAULT_YEAR = 2026
 # Keep exactly one uncommented event in this list.
 TARGET_EVENT_NAMES_LIST = [
-    
+
     # "Australian Grand Prix",
     # "Chinese Grand Prix",
     # "Japanese Grand Prix",
@@ -44,8 +44,8 @@ TARGET_EVENT_NAMES_LIST = [
     # "Canadian Grand Prix",
     # "Austrian Grand Prix",
     # "British Grand Prix",
-    "Belgian Grand Prix",
-    # "Hungarian Grand Prix",
+    # "Belgian Grand Prix",
+    "Hungarian Grand Prix",
     # "Dutch Grand Prix",
     # "Italian Grand Prix",
     # "Azerbaijan Grand Prix",

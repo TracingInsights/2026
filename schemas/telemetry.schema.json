@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tracinginsights.com/schemas/telemetry.schema.json",
+  "title": "Per-Lap Telemetry",
+  "description": "JSON Schema for a single lap's telemetry data produced by R.py. Each file is named {lap}_tel.json and contains high-frequency car data sampled at ~3.7 Hz.",
+  "type": "object",
+  "required": ["tel"],
+  "properties": {
+    "tel": {
+      "type": "object",
+      "required": [
+        "time",
+        "rpm",
+        "speed",
+        "gear",
+        "throttle",
+        "brake",
+        "drs",
+        "distance",
+        "rel_distance",
+        "DriverAhead",
+        "DistanceToDriverAhead",
+        "acc_x",
+        "acc_y",
+        "acc_z",
+        "x",
+        "y",
+        "z",
+        "dataKey"
+      ],
+      "properties": {
+        "time": {
+          "description": "Time in seconds relative to the start of the lap.",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "rpm": {
+          "description": "Engine revolutions per minute.",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "speed": {
+          "description": "Car speed in km/h.",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "gear": {
+          "description": "Current gear (1-8).",
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 8 }
+        },
+        "throttle": {
+          "description": "Throttle position as a percentage. Values are typically 0-100 but may occasionally exceed 100 due to interpolation or raw sensor values.",
+          "type": "array",
+          "items": { "type": "number", "minimum": 0 }
+        },
+        "brake": {
+          "description": "Brake application state. 0 = not braking, 1 = braking.",
+          "type": "array",
+          "items": { "type": "integer", "enum": [0, 1] }
+        },
+        "drs": {
+          "description": "Drag Reduction System state. 0 = closed, 1 = open.",
+          "type": "array",
+          "items": { "type": "integer", "enum": [0, 1] }
+        },
+        "distance": {
+          "description": "Distance travelled since the start of the lap in metres.",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "rel_distance": {
+          "description": "Normalized distance along the lap (0.0 = first sample, 1.0 = last sample). Tiny negative values may occur due to floating-point interpolation.",
+          "type": "array",
+          "items": { "type": "number", "minimum": -1e-5, "maximum": 1 }
+        },
+        "DriverAhead": {
+          "description": "Car number of the driver directly ahead, or 'None' if unavailable.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "DistanceToDriverAhead": {
+          "description": "Distance to the car ahead in metres, or 'None' if unavailable.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "type": "number" },
+              { "type": "string", "enum": ["None"] }
+            ]
+          }
+        },
+        "acc_x": {
+          "description": "Computed longitudinal acceleration in m/s².",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "acc_y": {
+          "description": "Computed lateral acceleration in m/s².",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "acc_z": {
+          "description": "Computed vertical acceleration in m/s².",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "x": {
+          "description": "X coordinate in metres (horizontal track position).",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "y": {
+          "description": "Y coordinate in metres (horizontal track position).",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "z": {
+          "description": "Z coordinate in metres (vertical track position / elevation).",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "dataKey": {
+          "description": "Unique identifier linking this telemetry to a specific year, event, session, driver and lap. Format: {Year}-{EventName}-{Session}-{Driver}-{LapNumber}",
+          "type": "string",
+          "examples": ["2026-Belgian Grand Prix-Race-VER-9"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
