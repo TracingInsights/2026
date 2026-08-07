@@ -535,6 +535,132 @@ class SeasonSessionExtractor:
         self._session_cache: Dict[str, fastf1.core.Session] = {}
         self._circuit_cache: Dict[str, dict] = {}
 
+    @staticmethod
+    def _fix_missing_retired_on_track_laps(f1session: fastf1.core.Session) -> int:
+        """Add partial last laps for cars that stopped on track.
+
+        FastF1's ``_fix_missing_laps_retired_on_track`` skips generation when
+        *any* prior session-status is ``Finished``. That is wrong for
+        multi-segment sessions (Qualifying / Sprint Qualifying): Q1/Q2 already
+        emit ``Finished`` before a Q3 crash, so the crash lap is dropped
+        (e.g. VER lap 11, 2026 Austrian GP Qualifying).
+
+        Mirror FastF1's generation logic, but treat the driver as finished only
+        when the *latest* status at/before the last lap end is ``Finished``.
+        """
+        if not hasattr(f1session, "_laps") or f1session._laps is None:
+            return 0
+        if not hasattr(f1session, "session_status") or f1session.session_status is None:
+            return 0
+
+        laps = f1session._laps
+        if laps.empty or "DriverNumber" not in laps.columns:
+            return 0
+
+        session_status = f1session.session_status
+        car_data = getattr(f1session, "_car_data", None) or {}
+        total_laps = getattr(f1session, "_total_laps", None)
+        added = 0
+        new_rows: List[pd.DataFrame] = []
+
+        for drv in laps["DriverNumber"].unique():
+            drv_laps = laps[laps["DriverNumber"] == drv]
+            if drv_laps.empty:
+                continue
+
+            if len(drv_laps) == 1 and bool(drv_laps["FastF1Generated"].iloc[0]):
+                continue
+
+            ref_time = drv_laps["Time"].iloc[-1]
+            if pd.isna(ref_time):
+                ref_time = drv_laps["LapStartTime"].iloc[-1]
+            if pd.isna(ref_time):
+                continue
+
+            next_statuses = session_status[session_status["Time"] > ref_time]
+            prev_statuses = session_status[session_status["Time"] <= ref_time]
+
+            if total_laps is not None and drv_laps["LapNumber"].max() == total_laps:
+                continue
+
+            # FastF1 bug: used .any() on Finished, which fires after Q1/Q2.
+            if (
+                not prev_statuses.empty
+                and prev_statuses["Status"].iloc[-1] == "Finished"
+            ):
+                continue
+
+            if next_statuses.empty or not (next_statuses["Status"] == "Finished").any():
+                continue
+
+            if not pd.isna(drv_laps["PitInTime"].iloc[-1]):
+                continue
+
+            if total_laps is not None and drv_laps.shape[0] >= total_laps:
+                continue
+
+            if (
+                len(drv_laps) >= 2
+                and not pd.isna(drv_laps["PitInTime"].iloc[-2])
+                and pd.isna(drv_laps["PitOutTime"].iloc[-1])
+            ):
+                continue
+
+            next_status = next_statuses.iloc[0]
+            if next_status["Status"] == "Aborted":
+                assumed_end_time = next_status["Time"]
+            else:
+                assumed_end_time = None
+                if drv in car_data:
+                    try:
+                        assumed_end_time = car_data[drv].loc[
+                            (car_data[drv]["SessionTime"] > ref_time)
+                            & (car_data[drv]["Speed"] == 0.0)
+                        ].iloc[0]["SessionTime"]
+                    except (IndexError, KeyError):
+                        assumed_end_time = None
+                if assumed_end_time is None:
+                    assumed_end_time = ref_time + pd.Timedelta(150, "sec")
+
+            new_last = pd.DataFrame(
+                {
+                    "LapStartTime": [drv_laps["Time"].iloc[-1]],
+                    "Time": [assumed_end_time],
+                    "Driver": [drv_laps["Driver"].iloc[-1]],
+                    "DriverNumber": [drv_laps["DriverNumber"].iloc[-1]],
+                    "Team": [drv_laps["Team"].iloc[-1]],
+                    "LapNumber": [drv_laps["LapNumber"].iloc[-1] + 1],
+                    "Stint": [drv_laps["Stint"].iloc[-1]],
+                    "Compound": [drv_laps["Compound"].iloc[-1]],
+                    "TyreLife": [drv_laps["TyreLife"].iloc[-1] + 1],
+                    "FreshTyre": [drv_laps["FreshTyre"].iloc[-1]],
+                    "Position": [np.nan],
+                    "FastF1Generated": [True],
+                    "IsAccurate": [False],
+                }
+            )
+            if hasattr(f1session, "_add_track_status_to_laps"):
+                f1session._add_track_status_to_laps(new_last)
+            new_rows.append(new_last)
+            added += 1
+            logger.info(
+                "Added retired-on-track lap %s for driver %s "
+                "(FastF1 skipped it due to multi-segment Finished status)",
+                int(new_last["LapNumber"].iloc[0]),
+                drv_laps["Driver"].iloc[-1],
+            )
+
+        if not new_rows:
+            return 0
+
+        f1session._laps = (
+            pd.concat([f1session._laps, *new_rows], ignore_index=True)
+            .__finalize__(f1session._laps)
+            .sort_values(by=["DriverNumber", "LapNumber"])
+            .reset_index(drop=True)
+        )
+        return added
+
     def get_session(
         self, event_name: str, session_name: str, load_telemetry: bool = True
     ) -> fastf1.core.Session:
@@ -546,11 +672,14 @@ class SeasonSessionExtractor:
                 cached.load(telemetry=True, weather=True, messages=True)
                 cached._telemetry_loaded = True
                 self._session_cache[cache_key] = cached
+            # Idempotent: safe on cache hits; needed after late telemetry load.
+            self._fix_missing_retired_on_track_laps(cached)
             return cached
 
         f1session = fastf1.get_session(self.year, event_name, session_name)
         f1session.load(telemetry=load_telemetry, weather=True, messages=True)
         f1session._telemetry_loaded = load_telemetry
+        self._fix_missing_retired_on_track_laps(f1session)
         self._session_cache[cache_key] = f1session
         return f1session
 
