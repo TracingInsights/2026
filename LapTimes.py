@@ -35,7 +35,7 @@ import requests
 # ---------------------------------------------------------------------------
 
 DEFAULT_YEAR = 2026
-# Keep exactly one uncommented event in this list.
+# Uncomment one or more events to process.
 TARGET_EVENT_NAMES_LIST = [
     # "Australian Grand Prix",
     # "Chinese Grand Prix",

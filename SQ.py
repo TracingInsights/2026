@@ -31,7 +31,7 @@ import requests
 # ---------------------------------------------------------------------------
 
 DEFAULT_YEAR = 2026
-# Keep exactly one uncommented event in this list.
+# Uncomment one or more events to process.
 TARGET_EVENT_NAMES_LIST = [
     
     # "Australian Grand Prix",
@@ -59,12 +59,9 @@ TARGET_EVENT_NAMES_LIST = [
     # "Qatar Grand Prix",
     # "Abu Dhabi Grand Prix",
 ]
-if len(TARGET_EVENT_NAMES_LIST) != 1:
-    raise ValueError(
-        "Set exactly one active event in TARGET_EVENT_NAME "
-        "(comment all others)."
-    )
-TARGET_EVENT_NAME = TARGET_EVENT_NAMES_LIST[0]
+TARGET_EVENT_NAMES = [e.strip() for e in TARGET_EVENT_NAMES_LIST if e.strip()]
+if not TARGET_EVENT_NAMES:
+    raise ValueError("Set at least one active event in TARGET_EVENT_NAMES_LIST.")
 AVAILABLE_SESSIONS = [
     "Practice 1",
     "Practice 2",
@@ -1089,9 +1086,8 @@ class SeasonSessionExtractor:
         logger.info(f"Starting season session extraction for {self.year}")
         start_time = time.time()
 
-        event_name = TARGET_EVENT_NAME.strip() if TARGET_EVENT_NAME else ""
-        if not event_name:
-            logger.warning("No TARGET_EVENT_NAME configured — nothing to extract.")
+        if not TARGET_EVENT_NAMES:
+            logger.warning("No TARGET_EVENT_NAMES configured — nothing to extract.")
             return
 
         sessions = [s for s in TARGET_SESSIONS if isinstance(s, str) and s.strip()]
@@ -1099,16 +1095,17 @@ class SeasonSessionExtractor:
             logger.warning("No TARGET_SESSIONS configured — nothing to extract.")
             return
 
-        logger.info(f"Processing {event_name} ({', '.join(sessions)})")
-        for session_name in sessions:
-            try:
-                self.process_event_session(event_name, session_name)
-            except Exception as e:
-                logger.error(f"Failed {event_name} {session_name}: {e}")
-            check_memory_usage(
-                session_cache=self._session_cache,
-                circuit_cache=self._circuit_cache,
-            )
+        for event_name in TARGET_EVENT_NAMES:
+            logger.info(f"Processing {event_name} ({', '.join(sessions)})")
+            for session_name in sessions:
+                try:
+                    self.process_event_session(event_name, session_name)
+                except Exception as e:
+                    logger.error(f"Failed {event_name} {session_name}: {e}")
+                check_memory_usage(
+                    session_cache=self._session_cache,
+                    circuit_cache=self._circuit_cache,
+                )
 
         elapsed = time.time() - start_time
         logger.info(f"Season session extraction completed in {elapsed:.2f} seconds")
@@ -1129,7 +1126,7 @@ def is_session_data_available(
     """Check if data is available for the first specified event/session pair."""
     try:
         if events is None:
-            events = [TARGET_EVENT_NAME] if TARGET_EVENT_NAME else []
+            events = list(TARGET_EVENT_NAMES)
         if sessions is None:
             sessions = list(TARGET_SESSIONS)
 
