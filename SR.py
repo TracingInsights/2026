@@ -34,20 +34,20 @@ DEFAULT_YEAR = 2026
 # Uncomment one or more events to process.
 TARGET_EVENT_NAMES_LIST = [
 
-    "Australian Grand Prix",
+    # "Australian Grand Prix",
     "Chinese Grand Prix",
-    "Japanese Grand Prix",
+    # "Japanese Grand Prix",
 
     "Miami Grand Prix",
 
-    "Monaco Grand Prix",
-    "Barcelona Grand Prix",
+    # "Monaco Grand Prix",
+    # "Barcelona Grand Prix",
 
     "Canadian Grand Prix",
-    "Austrian Grand Prix",
+    # "Austrian Grand Prix",
     "British Grand Prix",
-    "Belgian Grand Prix",
-    "Hungarian Grand Prix",
+    # "Belgian Grand Prix",
+    # "Hungarian Grand Prix",
 
     # "Bahrain Grand Prix",
     # "Saudi Arabian Grand Prix",
