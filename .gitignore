@@ -6,7 +6,7 @@ fastf1_http_cache.sqlite
 *.sqlite
 *.ff1pkl
 .freebuff/
-
+sync_hf_bucket.py
 # C extensions
 *.so
 
