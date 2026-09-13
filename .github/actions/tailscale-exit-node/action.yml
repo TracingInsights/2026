@@ -1,0 +1,37 @@
+name: Tailscale phone exit node
+description: Join the tailnet and route runner internet traffic through the phone exit node
+inputs:
+  oauth-client-id:
+    description: Tailscale OAuth client ID
+    required: true
+  oauth-secret:
+    description: Tailscale OAuth client secret
+    required: true
+  exit-node:
+    description: Tailscale hostname or 100.x IP of the phone exit node
+    required: false
+    default: phone
+  tags:
+    description: Tags applied to the ephemeral GitHub Actions node
+    required: false
+    default: tag:ci
+runs:
+  using: composite
+  steps:
+    - name: Connect to Tailscale
+      uses: tailscale/github-action@v4
+      with:
+        oauth-client-id: ${{ inputs.oauth-client-id }}
+        oauth-secret: ${{ inputs.oauth-secret }}
+        tags: ${{ inputs.tags }}
+        version: latest
+        timeout: 5m
+        ping: ${{ inputs.exit-node }}
+
+    - name: Route traffic through phone exit node
+      shell: bash
+      run: |
+        timeout 5m sudo -E tailscale set --exit-node="${{ inputs.exit-node }}" --exit-node-allow-lan-access=true
+        echo "Public IP via exit node:"
+        curl -fsS --max-time 30 https://ifconfig.me
+        echo

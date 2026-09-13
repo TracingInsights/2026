@@ -23,6 +23,7 @@ jobs:
             requirements.txt
             Q.py            
             utils.py
+            .github/actions/tailscale-exit-node
           sparse-checkout-cone-mode: false    
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -43,6 +44,13 @@ jobs:
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Route FastF1 traffic through phone exit node
+        uses: ./.github/actions/tailscale-exit-node
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          exit-node: ${{ secrets.TS_EXIT_NODE }}
 
       - name: Run Telemetry Extraction
         run: python Q.py
