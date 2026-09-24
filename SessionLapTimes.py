@@ -43,7 +43,7 @@ TARGET_EVENT_NAMES_LIST = [
     # "Emilia Romagna Grand Prix",
     # "Monaco Grand Prix",
     # "Barcelona Grand Prix",
-    "Spanish Grand Prix",
+    # "Spanish Grand Prix",
     # "Canadian Grand Prix",
 
     # "Austrian Grand Prix",
@@ -52,7 +52,7 @@ TARGET_EVENT_NAMES_LIST = [
     # "Hungarian Grand Prix",
     # "Dutch Grand Prix",
     # "Italian Grand Prix",
-    # "Azerbaijan Grand Prix",
+    "Azerbaijan Grand Prix",
     # "Singapore Grand Prix",
     # "United States Grand Prix",
     # "Mexico City Grand Prix",
