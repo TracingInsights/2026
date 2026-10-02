@@ -52,7 +52,7 @@ TARGET_EVENT_NAMES_LIST = [
     # "Saudi Arabian Grand Prix",
     # "Dutch Grand Prix",
     # "Italian Grand Prix",
-    "Azerbaijan Grand Prix",
+    # "Azerbaijan Grand Prix",
     # "Singapore Grand Prix",
     # "United States Grand Prix",
     # "Mexico City Grand Prix",
@@ -60,6 +60,7 @@ TARGET_EVENT_NAMES_LIST = [
     # "Las Vegas Grand Prix",
     # "Qatar Grand Prix",
     # "Abu Dhabi Grand Prix",
+    "Bahrain Grand Prix",
 ]
 TARGET_EVENT_NAMES = [e.strip() for e in TARGET_EVENT_NAMES_LIST if e.strip()]
 if not TARGET_EVENT_NAMES:
