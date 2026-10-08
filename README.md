@@ -88,6 +88,38 @@ Or fetch a file via GitHub's raw URL:
 curl -L https://raw.githubusercontent.com/TracingInsights/2026/main/Australian%20Grand%20Prix/Race/session_laptimes.json
 ```
 
+### Fetch via CDN (jsDelivr)
+
+Every push to this repository creates a GitHub release with a semver tag (e.g. `2026.281.1`). You can fetch any file through jsDelivr pinned to that release:
+
+```text
+https://cdn.jsdelivr.net/gh/TracingInsights/2026@2026.281.1/Australian%20Grand%20Prix/Race/session_laptimes.json
+```
+
+To get the latest data, resolve the current release tag first (both requests are fast and CORS-enabled):
+
+```javascript
+const release = await fetch(
+  "https://api.github.com/repos/TracingInsights/2026/releases/latest"
+).then(r => r.json());
+
+const url = `https://cdn.jsdelivr.net/gh/TracingInsights/2026@${release.tag_name}/Australian%20Grand%20Prix/Race/session_laptimes.json`;
+```
+
+```bash
+TAG=$(curl -s https://api.github.com/repos/TracingInsights/2026/releases/latest | jq -r .tag_name)
+curl -L "https://cdn.jsdelivr.net/gh/TracingInsights/2026@${TAG}/Australian%20Grand%20Prix/Race/session_laptimes.json"
+```
+
+You can also use a branch directly (cached for 12 hours) if you don't need release pinning:
+
+```text
+https://cdn.jsdelivr.net/gh/TracingInsights/2026@main/Australian%20Grand%20Prix/Race/session_laptimes.json
+```
+
+> **Note:** jsDelivr serves individual files up to 20 MB. The latest release tag is also available from jsDelivr's own API:
+> `https://data.jsdelivr.com/v1/packages/gh/TracingInsights/2026/resolved?specifier=latest`
+
 ---
 
 ## ❓ Frequently Asked Questions

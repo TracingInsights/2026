@@ -1,0 +1,119 @@
+name: Create Release
+
+# Creates a GitHub release (with a semver tag) for every new commit on main,
+# so jsDelivr and other CDNs can serve a pinned data snapshot:
+#   https://cdn.jsdelivr.net/gh/TracingInsights/2026@<tag>/<path-to-file>
+# Consumers resolve the newest snapshot via:
+#   https://api.github.com/repos/TracingInsights/2026/releases/latest
+#
+# Two triggers, because bot and human commits behave differently:
+#  1. workflow_run — the data workflows (FP1..SR, cor, pre, laptimes,
+#     sessionlaptimes) push their commits with the default GITHUB_TOKEN,
+#     which never triggers on:push workflows. This workflow therefore runs
+#     after each of those completes and releases the new main HEAD.
+#  2. push — covers commits pushed directly by humans (with real
+#     credentials), which do trigger push workflows.
+#
+# Tag scheme (valid semver, monotonic):  <year>.<day-of-year>.<build>
+#   e.g. 2026.281.1, 2026.281.2, 2026.282.1 ...
+# jsDelivr "latest" resolution and version listings only work with semver tags.
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [FP1, FP2, FP3, Q, R, SQ, SR, cor, pre, LappyTimey, SessionLappyTimey]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: create-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Only act on successful upstream runs; re-runs that produced no new
+    # commit are skipped later by the "already released" check.
+    if: ${{ github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 2   # need HEAD~1 to summarize what changed
+
+      - name: Fetch tags
+        run: git fetch --depth=1 origin '+refs/tags/*:refs/tags/*'
+
+      - name: Skip if this commit already has a release
+        id: check
+        run: |
+          if git tag --points-at HEAD | grep -q .; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "HEAD $(git rev-parse HEAD) already has a release: $(git tag --points-at HEAD)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute tag name
+        id: tag
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          YEAR=$(date -u +'%Y')
+          DOY=$(date -u +'%j')
+          # Strip leading zeros so the tag is valid semver (e.g. 281, not 081)
+          DOY=$((10#$DOY))
+          BUILD=1
+          while git ls-remote --exit-code --tags origin "refs/tags/${YEAR}.${DOY}.${BUILD}" >/dev/null 2>&1; do
+            BUILD=$((BUILD + 1))
+          done
+          echo "tag=${YEAR}.${DOY}.${BUILD}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize changes for release notes
+        id: notes
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          {
+            echo "body<<EOF"
+            echo "## Data update"
+            echo ""
+            echo "**Commit:** \`$(git rev-parse HEAD)\`"
+            echo ""
+            echo "### Grand Prix / session folders changed"
+            echo '```'
+            if git rev-parse --verify -q HEAD~1 >/dev/null; then
+              git diff --name-only HEAD~1 HEAD -- '*.json' \
+                | grep -E 'Grand Prix|Pre-Season' \
+                | cut -d/ -f1-2 \
+                | sort -u \
+                | sed 's/^/  /' \
+                | head -50
+            else
+              echo "  (initial release)"
+            fi
+            echo '```'
+            echo ""
+            echo "### CDN"
+            echo ""
+            echo "\`https://cdn.jsdelivr.net/gh/TracingInsights/2026@${{ steps.tag.outputs.tag }}/<path-to-file>\`"
+            echo ""
+            echo "Latest release tag: https://api.github.com/repos/TracingInsights/2026/releases/latest"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_NOTES: ${{ steps.notes.outputs.body }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --target "$(git rev-parse HEAD)" \
+            --title "Data $RELEASE_TAG" \
+            --notes "$RELEASE_NOTES" \
+            --latest
