@@ -279,7 +279,29 @@ Information about the physical corners of the racetrack layout.
 | **Y** | Y Coordinate | Horizontal position of the corner on the track map |  meter |  |
 | **Angle** | Angle | is an angle in degrees, used to visually offset the marker’s placement on a track map in a logical direction (usually orthogonal to the track). | ° (degrees) |  |
 | **Distance** | Distance | Location of the marker as a distance from the start/finish line.   | meter | Position relative to start/finish |
+| **Section** | Corner Section Classification | The track section this corner is located in: `"Straight"`, `"Low"`, `"Medium"`, or `"High"` (low/medium/high speed). Derived from the circuit's section breakdown (`sections/<circuit>.json`) by converting the corner's `Distance` to a percentage of the reference (fastest) lap's total lap distance. `null` if no section breakdown exists for this circuit. | Category or None | Classifies corners by the speed regime of the track they sit on |
 | **Rotation** | Rotation | Rotation of the circuit in degrees. This can be used to rotate the coordinate system of the telemetry (position) data to match the orientation of the official track map. | Degrees or None |  |
+
+### Track Sections (`sections` / `Section*` fields)
+
+The section breakdown of the lap: how the circuit is divided into straights and low/medium/high-speed stretches, as a percentage of total lap distance. Source: `sections/<circuit>.json` (manually curated per circuit, e.g. `sections/singapore.json`). The percentage bands are converted to absolute distances using the reference (fastest) lap's total lap distance.
+
+Each section band has five attributes:
+
+| Field | Description | Unit |
+| --- | --- | --- |
+| **Type** | Section type: `"Straight"`, `"Low"`, `"Medium"`, or `"High"` (low/medium/high speed) | Category |
+| **StartPercent** | Start of the section as a percentage of total lap distance | % |
+| **EndPercent** | End of the section as a percentage of total lap distance | % |
+| **StartDistance** | Start of the section as a distance from the start/finish line | meter |
+| **EndDistance** | End of the section as a distance from the start/finish line | meter |
+
+The two producers of `corners.json` store the bands in their own file style:
+
+- **Object style** (`corner.py`): a `sections` key holding an array of objects, each with the five fields above: `"sections": [{"Type": ..., "StartPercent": ..., "EndPercent": ..., "StartDistance": ..., "EndDistance": ...}, ...]`
+- **Column style** (`R.py`, `Q.py`, `FP1.py`-`FP3.py`, `SQ.py`, `SR.py`, `preseason.py`): parallel column lists — `SectionType`, `SectionStartPercent`, `SectionEndPercent`, `SectionStartDistance`, `SectionEndDistance` — each an array with one entry per section band, alongside the per-corner `Section` array (aligned with `CornerNumber`).
+
+Note: sections are only emitted when a `sections/<circuit>.json` file exists for the circuit; otherwise the band arrays are empty and per-corner `Section` values are `null`.
 
 
 

@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import math
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import requests
@@ -17,10 +18,13 @@ except ModuleNotFoundError:  # pragma: no cover - allows pure stdlib tests
 YEAR = 2026
 EVENTS = ["Australian Grand Prix"]
 SESSIONS = ["Race", "Qualifying", "Practice 3", "Practice 2", "Practice 1"]
+SECTIONS_DIR = "sections"
 PROTO = "https"
 HOST = "api.multiviewer.app"
 HEADERS = {"User-Agent": "FastF1/"}
 REQUEST_TIMEOUT = 30
+
+VALID_SECTION_TYPES = {"Straight", "Low", "Medium", "High"}
 
 _CIRCUITS_INDEX_CACHE: dict[str, dict[str, Any]] | None = None
 _CIRCUIT_PAYLOAD_CACHE: dict[tuple[int, int], dict[str, Any]] = {}
@@ -34,10 +38,12 @@ class LocalCircuitInfo:
     rotation: float
     requested_year: int
     source_year: int
+    sections: list[dict[str, Any]] = field(default_factory=list)
 
     def to_payload(self) -> dict[str, Any]:
         return {
             "corners": self.corners,
+            "sections": self.sections,
             "marshal_lights": self.marshal_lights,
             "marshal_sectors": self.marshal_sectors,
             "rotation": self.rotation,
@@ -233,10 +239,169 @@ def assign_marker_distances(
     return resolved_markers
 
 
-def add_marker_distance_local(
-    circuit_info: LocalCircuitInfo, reference_lap: Any
+def _slug_candidates(name: str) -> list[str]:
+    """Return slug candidates for a circuit/event name.
+
+    "Singapore Grand Prix" -> ["singapore", "singaporegrandprix"]
+    """
+    lowered = str(name).strip().lower()
+    if not lowered:
+        return []
+
+    full_slug = re.sub(r"[^a-z0-9]+", "", lowered)
+    stripped = re.sub(r"\s*grand\s*prix\s*", " ", lowered)
+    stripped_slug = re.sub(r"[^a-z0-9]+", "", stripped)
+
+    candidates = []
+    for slug in (stripped_slug, full_slug):
+        if slug and slug not in candidates:
+            candidates.append(slug)
+    return candidates
+
+
+def parse_circuit_sections(raw: Any) -> list[tuple[str, float, float]]:
+    """Parse and validate raw section rows: [type, start_percent, end_percent]."""
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("Circuit sections must be a non-empty list")
+
+    rows = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            section_type = entry.get("Type") or entry.get("type")
+            start = entry.get("StartPercent", entry.get("start"))
+            end = entry.get("EndPercent", entry.get("end"))
+        else:
+            section_type, start, end = entry[0], entry[1], entry[2]
+
+        section_type = str(section_type).strip().capitalize()
+        if section_type not in VALID_SECTION_TYPES:
+            raise ValueError(
+                f"Invalid circuit section type {section_type!r}; "
+                f"expected one of {sorted(VALID_SECTION_TYPES)}"
+            )
+
+        start = float(start)
+        end = float(end)
+        if not (math.isfinite(start) and math.isfinite(end)):
+            raise ValueError("Circuit section bounds must be finite numbers")
+        if not (0.0 <= start < end <= 100.0):
+            raise ValueError(
+                f"Invalid circuit section bounds {start}-{end}; "
+                "expected 0 <= start < end <= 100"
+            )
+
+        rows.append((section_type, start, end))
+
+    return rows
+
+
+def load_circuit_sections(
+    event_name: str, session_info: dict[str, Any] | None = None
+) -> list[tuple[str, float, float]] | None:
+    """Load sections/<circuit>.json for this event, if one exists.
+
+    Falls back to None when no section breakdown has been added for this
+    circuit yet (only some circuits have one).
+    """
+    names = [event_name]
+    if session_info:
+        meeting = session_info.get("Meeting") or {}
+        circuit = meeting.get("Circuit") or {}
+        names.extend(
+            str(value)
+            for value in (
+                circuit.get("ShortName"),
+                circuit.get("Name"),
+                meeting.get("Location"),
+            )
+            if value
+        )
+
+    candidates: list[str] = []
+    for name in names:
+        for slug in _slug_candidates(name):
+            if slug not in candidates:
+                candidates.append(slug)
+
+    for slug in candidates:
+        path = os.path.join(SECTIONS_DIR, f"{slug}.json")
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            return parse_circuit_sections(json.load(f))
+
+    return None
+
+
+def build_section_entries(
+    section_rows: list[tuple[str, float, float]], total_lap_distance: float
+) -> list[dict[str, Any]]:
+    """Convert percentage-based sections to absolute distances using the
+    reference (fastest) lap's total lap distance."""
+    if not math.isfinite(total_lap_distance) or total_lap_distance <= 0:
+        raise ValueError("total_lap_distance must be a positive finite number")
+
+    return [
+        {
+            "Type": section_type,
+            "StartPercent": start,
+            "EndPercent": end,
+            "StartDistance": start / 100.0 * total_lap_distance,
+            "EndDistance": end / 100.0 * total_lap_distance,
+        }
+        for section_type, start, end in section_rows
+    ]
+
+
+def get_section_for_distance(
+    distance: float | None,
+    section_entries: list[dict[str, Any]],
+    total_lap_distance: float,
+) -> str | None:
+    """Return the section (Straight/Low/Medium/High) containing this distance."""
+    if distance is None or not section_entries:
+        return None
+
+    percent = distance / total_lap_distance * 100.0
+    for index, entry in enumerate(section_entries):
+        is_last = index == len(section_entries) - 1
+        if entry["StartPercent"] <= percent < entry["EndPercent"]:
+            return entry["Type"]
+        if is_last and percent >= entry["EndPercent"]:
+            return entry["Type"]
+    return None
+
+
+def get_total_lap_distance(telemetry_samples: list[dict[str, float]]) -> float:
+    if not telemetry_samples:
+        raise ValueError("telemetry_samples cannot be empty")
+    return max(sample["Distance"] for sample in telemetry_samples)
+
+
+def add_sections_local(
+    circuit_info: LocalCircuitInfo,
+    section_rows: list[tuple[str, float, float]],
+    total_lap_distance: float,
 ) -> LocalCircuitInfo:
-    telemetry_samples = get_reference_telemetry_samples(reference_lap)
+    """Attach section breakdown and classify each corner into its section."""
+    section_entries = build_section_entries(section_rows, total_lap_distance)
+
+    corners = [
+        {
+            **corner,
+            "Section": get_section_for_distance(
+                corner.get("Distance"), section_entries, total_lap_distance
+            ),
+        }
+        for corner in circuit_info.corners
+    ]
+
+    return replace(circuit_info, corners=corners, sections=section_entries)
+
+
+def add_marker_distance_from_samples(
+    circuit_info: LocalCircuitInfo, telemetry_samples: list[dict[str, float]]
+) -> LocalCircuitInfo:
     return LocalCircuitInfo(
         corners=assign_marker_distances(circuit_info.corners, telemetry_samples),
         marshal_lights=assign_marker_distances(
@@ -248,7 +413,15 @@ def add_marker_distance_local(
         rotation=circuit_info.rotation,
         requested_year=circuit_info.requested_year,
         source_year=circuit_info.source_year,
+        sections=circuit_info.sections,
     )
+
+
+def add_marker_distance_local(
+    circuit_info: LocalCircuitInfo, reference_lap: Any
+) -> LocalCircuitInfo:
+    telemetry_samples = get_reference_telemetry_samples(reference_lap)
+    return add_marker_distance_from_samples(circuit_info, telemetry_samples)
 
 
 def get_local_circuit_info(circuit_key: int, requested_year: int) -> LocalCircuitInfo:
@@ -281,7 +454,21 @@ def get_session_circuit_info(
         raise ValueError(f"No fastest lap available for {event_name}/{session_name}")
 
     circuit_info = get_local_circuit_info(circuit_key, year)
-    return add_marker_distance_local(circuit_info, fastest_lap)
+
+    # Same process as FastF1's circuit_info.add_marker_distance(): the fastest
+    # lap is the reference lap and all marker/section distances are resolved
+    # against its telemetry.
+    telemetry_samples = get_reference_telemetry_samples(fastest_lap)
+    circuit_info = add_marker_distance_from_samples(circuit_info, telemetry_samples)
+
+    section_rows = load_circuit_sections(event_name, session.session_info)
+    if section_rows is not None:
+        total_lap_distance = get_total_lap_distance(telemetry_samples)
+        circuit_info = add_sections_local(
+            circuit_info, section_rows, total_lap_distance
+        )
+
+    return circuit_info
 
 
 def main() -> None:
@@ -304,14 +491,19 @@ def main() -> None:
             output_dir = f"{event_name}/{session_name}"
             os.makedirs(output_dir, exist_ok=True)
 
-            output_path = f"{output_dir}/cor.json"
+            output_path = f"{output_dir}/corners.json"
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=2, allow_nan=False)
 
+            sections_note = (
+                f", sections: {len(circuit_info.sections)}"
+                if circuit_info.sections
+                else ", no section breakdown available"
+            )
             print(
                 "✓ Corners data saved to "
                 f"{output_path} (reference lap: fastest lap, "
-                f"layout year: {circuit_info.source_year})"
+                f"layout year: {circuit_info.source_year}{sections_note})"
             )
 
 

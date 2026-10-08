@@ -591,11 +591,53 @@
           "source": "FastF1 / MultiViewer API",
           "unit": "meter"
         },
+        "Section": {
+          "full_name": "Corner Section Classification",
+          "description": "The track section this corner is located in: 'Straight', 'Low', 'Medium', or 'High' (low/medium/high speed). Derived from the circuit's section breakdown (sections/<circuit>.json) by converting the corner's Distance to a percentage of the reference (fastest) lap's total lap distance. null if no section breakdown exists for this circuit. Object style (corner.py): 'Section' key on each corner; column style (R.py etc.): array aligned with CornerNumber.",
+          "source": "sections/<circuit>.json (curated) + fastest-lap reference",
+          "unit": "Category or None"
+        },
         "Rotation": {
           "full_name": "Rotation",
           "description": "Rotation of the circuit in degrees. This can be used to rotate the coordinate system of the telemetry (position) data to match the orientation of the official track map.",
           "source": "FastF1 / MultiViewer API",
           "unit": "Degrees or None"
+        },
+        "sections": {
+          "full_name": "Track Sections",
+          "description": "Section breakdown of the lap: how the circuit is divided into straights and low/medium/high-speed stretches, as a percentage of total lap distance (source: sections/<circuit>.json). Object style (corner.py): array of objects with Type, StartPercent, EndPercent, StartDistance, EndDistance (meters from start/finish line, converted using the reference fastest lap's total lap distance). Column style (R.py, Q.py, FP1-FP3, SQ, SR, preseason): parallel arrays SectionType, SectionStartPercent, SectionEndPercent, SectionStartDistance, SectionEndDistance. Empty when no sections/<circuit>.json exists for the circuit.",
+          "source": "sections/<circuit>.json (curated) + fastest-lap reference",
+          "unit": "Array"
+        },
+        "SectionType": {
+          "full_name": "Section Type",
+          "description": "Type of each track section band: 'Straight', 'Low', 'Medium', or 'High'. Column style (R.py etc.): array with one entry per section band.",
+          "source": "sections/<circuit>.json (curated) + fastest-lap reference",
+          "unit": "Category array"
+        },
+        "SectionStartPercent": {
+          "full_name": "Section Start Percent",
+          "description": "Start of each section band as a percentage of total lap distance. Column style (R.py etc.): array with one entry per section band.",
+          "source": "sections/<circuit>.json (curated) + fastest-lap reference",
+          "unit": "% array"
+        },
+        "SectionEndPercent": {
+          "full_name": "Section End Percent",
+          "description": "End of each section band as a percentage of total lap distance. Column style (R.py etc.): array with one entry per section band.",
+          "source": "sections/<circuit>.json (curated) + fastest-lap reference",
+          "unit": "% array"
+        },
+        "SectionStartDistance": {
+          "full_name": "Section Start Distance",
+          "description": "Start of each section band as a distance from the start/finish line, converted from percentage using the reference (fastest) lap's total lap distance. null when the reference lap distance is unavailable. Column style (R.py etc.): array with one entry per section band.",
+          "source": "sections/<circuit>.json (curated) + fastest-lap reference",
+          "unit": "meter array or None"
+        },
+        "SectionEndDistance": {
+          "full_name": "Section End Distance",
+          "description": "End of each section band as a distance from the start/finish line, converted from percentage using the reference (fastest) lap's total lap distance. null when the reference lap distance is unavailable. Column style (R.py etc.): array with one entry per section band.",
+          "source": "sections/<circuit>.json (curated) + fastest-lap reference",
+          "unit": "meter array or None"
         }
       }
     }
