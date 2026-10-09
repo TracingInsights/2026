@@ -499,24 +499,71 @@ def _process_telemetry_to_dict(telemetry: pd.DataFrame, data_key: str) -> dict:
 
 # Circuit section breakdowns: sections/<circuit>.json divides the lap into
 # straights and low/medium/high-speed sections as a percentage of the total
-# lap distance, e.g. sections/singapore.json:
+# lap distance, e.g. sections/marina-bay-street-circuit.json:
 #     [["Straight", 0.00, 5.96], ["Low", 5.96, 13.44], ...]
-# Only some circuits have a breakdown; circuits without a file are skipped.
+# Files are named after circuits (e.g. marina-bay-street-circuit.json), not
+# events, so known events are mapped to their circuit's file below. Unmapped
+# events fall back to matching slugified circuit names. Only some circuits
+# have a breakdown; circuits without a file are skipped.
 SECTIONS_DIR = "sections"
 VALID_SECTION_TYPES = {"Straight", "Low", "Medium", "High"}
 
+# Event name -> sections/ file name (without the .json extension).
+EVENT_SECTIONS_FILE = {
+    "Australian Grand Prix": "albert-park-circuit",
+    "Austrian Grand Prix": "red-bull-ring",
+    "Azerbaijan Grand Prix": "baku-city-circuit",
+    "Bahrain Grand Prix": "bahrain-international-circuit",
+    "Barcelona Grand Prix": "circuit-de-barcelona-catalunya",
+    "Belgian Grand Prix": "circuit-de-spa-francorchamps",
+    "Dutch Grand Prix": "circuit-zandvoort",
+    "Miami Grand Prix": "miami-international-autodrome",
+    "Monaco Grand Prix": "circuit-de-monaco",
+    "Saudi Arabian Grand Prix": "jeddah-corniche-circuit",
+    "Singapore Grand Prix": "marina-bay-street-circuit",
+    "Qatar Grand Prix": "lusail-international-circuit",
+    "Abu Dhabi Grand Prix": "yas-marina-circuit",
+    "United States Grand Prix": "circuit-of-the-americas",
+    "Mexico City Grand Prix": "autodrome-hermanos-rodriguez",
+    "São Paulo Grand Prix": "interlagos-circuit",
+    "Pre-Season Testing": "bahrain-international-circuit",
+    "Pre-Season Testing 1": "bahrain-international-circuit",
+    "Pre-Season Testing 2": "bahrain-international-circuit",
+}
+
 
 def _slug_candidates(name) -> List[str]:
+    """Hyphenated slug candidates for a circuit/event name.
+
+    "Marina Bay Street Circuit" -> ["marina-bay-street-circuit"]
+    """
     lowered = str(name).strip().lower()
     if not lowered:
         return []
-    stripped = lowered.replace("grand prix", " ")
+
+    def slugify(value):
+        return "-".join(
+            "".join(ch if ch.isalnum() else " " for ch in value).split()
+        )
+
     candidates = []
-    for variant in (stripped, lowered):
-        slug = "".join(ch for ch in variant if ch.isalnum())
+    for variant in (lowered.replace("grand prix", " "), lowered):
+        slug = slugify(variant)
         if slug and slug not in candidates:
             candidates.append(slug)
     return candidates
+
+
+def _sections_file_stems() -> List[str]:
+    """Section file names in SECTIONS_DIR without the .json extension."""
+    try:
+        return [
+            fn[: -len(".json")]
+            for fn in os.listdir(SECTIONS_DIR)
+            if fn.endswith(".json")
+        ]
+    except OSError:
+        return []
 
 
 def _load_circuit_sections(
@@ -535,6 +582,7 @@ def _load_circuit_sections(
         names.extend(
             str(value)
             for value in (
+                meeting.get("Name"),
                 circuit.get("ShortName"),
                 circuit.get("Name"),
                 meeting.get("Location"),
@@ -545,11 +593,27 @@ def _load_circuit_sections(
 
     candidates: List[str] = []
     for name in names:
+        mapped = EVENT_SECTIONS_FILE.get(str(name))
+        if mapped and mapped not in candidates:
+            candidates.append(mapped)
         for slug in _slug_candidates(name):
             if slug not in candidates:
                 candidates.append(slug)
 
-    for slug in candidates:
+    # Exact file-name matches first; then fall back to circuit-named files
+    # that contain every word of a candidate (e.g. "monaco" matches
+    # "circuit-de-monaco.json", "spa-francorchamps" matches
+    # "circuit-de-spa-francorchamps.json").
+    available = _sections_file_stems()
+    stems = [slug for slug in candidates if slug in available]
+    if not stems:
+        for slug in candidates:
+            tokens = set(slug.split("-"))
+            for stem in available:
+                if tokens and tokens <= set(stem.split("-")) and stem not in stems:
+                    stems.append(stem)
+
+    for slug in stems:
         path = os.path.join(SECTIONS_DIR, f"{slug}.json")
         if not os.path.isfile(path):
             continue

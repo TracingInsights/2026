@@ -284,7 +284,7 @@ Information about the physical corners of the racetrack layout.
 
 ### Track Sections (`sections` / `Section*` fields)
 
-The section breakdown of the lap: how the circuit is divided into straights and low/medium/high-speed stretches, as a percentage of total lap distance. Source: `sections/<circuit>.json` (manually curated per circuit, e.g. `sections/singapore.json`). The percentage bands are converted to absolute distances using the reference (fastest) lap's total lap distance.
+The section breakdown of the lap: how the circuit is divided into straights and low/medium/high-speed stretches, as a percentage of total lap distance. Source: `sections/<circuit>.json` (manually curated per circuit, e.g. `sections/marina-bay-street-circuit.json`). The percentage bands are converted to absolute distances using the reference (fastest) lap's total lap distance.
 
 Each section band has five attributes:
 

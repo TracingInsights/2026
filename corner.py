@@ -26,6 +26,30 @@ REQUEST_TIMEOUT = 30
 
 VALID_SECTION_TYPES = {"Straight", "Low", "Medium", "High"}
 
+# Circuit section breakdowns live in sections/<circuit>.json, named after
+# the circuit (e.g. sections/marina-bay-street-circuit.json), not the event.
+# Event name -> sections/ file name (without the .json extension).
+EVENT_SECTIONS_FILE: dict[str, str] = {
+    "Australian Grand Prix": "albert-park-circuit",
+    "Austrian Grand Prix": "red-bull-ring",
+    "Azerbaijan Grand Prix": "baku-city-circuit",
+    "Barcelona Grand Prix": "circuit-de-barcelona-catalunya",
+    "Belgian Grand Prix": "circuit-de-spa-francorchamps",
+    "Dutch Grand Prix": "circuit-zandvoort",
+    "Miami Grand Prix": "miami-international-autodrome",
+    "Monaco Grand Prix": "circuit-de-monaco",
+    "Saudi Arabian Grand Prix": "jeddah-corniche-circuit",
+    "Singapore Grand Prix": "marina-bay-street-circuit",
+    "Qatar Grand Prix": "lusail-international-circuit",
+    "Abu Dhabi Grand Prix": "yas-marina-circuit",
+    "United States Grand Prix": "circuit-of-the-americas",
+    "Mexico City Grand Prix": "autodrome-hermanos-rodriguez",
+    "São Paulo Grand Prix": "interlagos-circuit",
+    "Pre-Season Testing": "bahrain-international-circuit",
+    "Pre-Season Testing 1": "bahrain-international-circuit",
+    "Pre-Season Testing 2": "bahrain-international-circuit",
+}
+
 _CIRCUITS_INDEX_CACHE: dict[str, dict[str, Any]] | None = None
 _CIRCUIT_PAYLOAD_CACHE: dict[tuple[int, int], dict[str, Any]] = {}
 
@@ -240,23 +264,39 @@ def assign_marker_distances(
 
 
 def _slug_candidates(name: str) -> list[str]:
-    """Return slug candidates for a circuit/event name.
+    """Return hyphenated slug candidates for a circuit/event name.
 
-    "Singapore Grand Prix" -> ["singapore", "singaporegrandprix"]
+    "Marina Bay Street Circuit" -> ["marina-bay-street-circuit"]
     """
     lowered = str(name).strip().lower()
     if not lowered:
         return []
 
-    full_slug = re.sub(r"[^a-z0-9]+", "", lowered)
-    stripped = re.sub(r"\s*grand\s*prix\s*", " ", lowered)
-    stripped_slug = re.sub(r"[^a-z0-9]+", "", stripped)
+    def _slugify(value: str) -> str:
+        return "-".join(
+            "".join(ch if ch.isalnum() else " " for ch in value).split()
+        )
+
+    stripped = _slugify(re.sub(r"\s*grand\s*prix\s*", " ", lowered))
+    full_slug = _slugify(lowered)
 
     candidates = []
-    for slug in (stripped_slug, full_slug):
+    for slug in (stripped, full_slug):
         if slug and slug not in candidates:
             candidates.append(slug)
     return candidates
+
+
+def _sections_file_stems() -> list[str]:
+    """Section file names in SECTIONS_DIR without the .json extension."""
+    try:
+        return [
+            fn[: -len(".json")]
+            for fn in os.listdir(SECTIONS_DIR)
+            if fn.endswith(".json")
+        ]
+    except OSError:
+        return []
 
 
 def parse_circuit_sections(raw: Any) -> list[tuple[str, float, float]]:
@@ -300,8 +340,10 @@ def load_circuit_sections(
 ) -> list[tuple[str, float, float]] | None:
     """Load sections/<circuit>.json for this event, if one exists.
 
-    Falls back to None when no section breakdown has been added for this
-    circuit yet (only some circuits have one).
+    Files are named after circuits, not events, so known events are mapped
+    via EVENT_SECTIONS_FILE; other names fall back to slug matching. Returns
+    None when no section breakdown has been added for this circuit yet (only
+    some circuits have one).
     """
     names = [event_name]
     if session_info:
@@ -310,6 +352,7 @@ def load_circuit_sections(
         names.extend(
             str(value)
             for value in (
+                meeting.get("Name"),
                 circuit.get("ShortName"),
                 circuit.get("Name"),
                 meeting.get("Location"),
@@ -319,11 +362,26 @@ def load_circuit_sections(
 
     candidates: list[str] = []
     for name in names:
+        mapped = EVENT_SECTIONS_FILE.get(str(name))
+        if mapped and mapped not in candidates:
+            candidates.append(mapped)
         for slug in _slug_candidates(name):
             if slug not in candidates:
                 candidates.append(slug)
 
-    for slug in candidates:
+    # Exact file-name matches first; then fall back to circuit-named files
+    # that contain every word of a candidate (e.g. "monaco" matches
+    # "circuit-de-monaco.json").
+    available = _sections_file_stems()
+    stems = [slug for slug in candidates if slug in available]
+    if not stems:
+        for slug in candidates:
+            tokens = set(slug.split("-"))
+            for stem in available:
+                if tokens and tokens <= set(stem.split("-")) and stem not in stems:
+                    stems.append(stem)
+
+    for slug in stems:
         path = os.path.join(SECTIONS_DIR, f"{slug}.json")
         if not os.path.isfile(path):
             continue
