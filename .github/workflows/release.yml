@@ -47,7 +47,11 @@ jobs:
           fetch-depth: 2   # need HEAD~1 to summarize what changed
 
       - name: Fetch tags
-        run: git fetch --depth=1 origin '+refs/tags/*:refs/tags/*'
+        # NB: an explicit '+refs/tags/*:refs/tags/*' refspec combined with
+        # --depth makes git exit 1 (silently) when the remote has no tags
+        # yet, which happens on the very first release. '--tags' behaves the
+        # same but tolerates an empty remote tag namespace.
+        run: git fetch --depth=1 --tags origin
 
       - name: Skip if this commit already has a release
         id: check
