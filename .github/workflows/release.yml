@@ -40,25 +40,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout main
+      - name: Checkout main (metadata only)
+        # The repo is multiple GB of data files and a full checkout took ~8 min.
+        # This job only needs commit/tree metadata, so:
+        #  - filter: blob:none -> fetch commits + trees, no file contents
+        #  - sparse-checkout   -> materialise one small file instead of ~60k
+        # 'git diff --name-only --no-renames' works purely on trees, so it
+        # never triggers a lazy blob fetch.
         uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 2   # need HEAD~1 to summarize what changed
+          filter: blob:none
+          sparse-checkout: |
+            /README.md
+          sparse-checkout-cone-mode: false
 
-      - name: Fetch tags
-        # NB: an explicit '+refs/tags/*:refs/tags/*' refspec combined with
-        # --depth makes git exit 1 (silently) when the remote has no tags
-        # yet, which happens on the very first release. '--tags' behaves the
-        # same but tolerates an empty remote tag namespace.
-        run: git fetch --depth=1 --tags origin
+      - name: List remote tags
+        # One ls-remote round-trip replaces fetching tags and probing each
+        # candidate tag name individually. Works with an empty tag namespace.
+        run: git ls-remote --tags origin > "$RUNNER_TEMP/remote-tags.txt"
 
       - name: Skip if this commit already has a release
         id: check
         run: |
-          if git tag --points-at HEAD | grep -q .; then
+          HEAD_SHA=$(git rev-parse HEAD)
+          # Matches lightweight tags and peeled (^{}) annotated tags alike.
+          EXISTING=$(awk -v sha="$HEAD_SHA" '$1 == sha { sub("refs/tags/", "", $2); sub(/\^\{\}$/, "", $2); print $2 }' "$RUNNER_TEMP/remote-tags.txt")
+          if [ -n "$EXISTING" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "HEAD $(git rev-parse HEAD) already has a release: $(git tag --points-at HEAD)"
+            echo "HEAD $HEAD_SHA already has a release: $EXISTING"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -71,10 +82,10 @@ jobs:
           DOY=$(date -u +'%j')
           # Strip leading zeros so the tag is valid semver (e.g. 281, not 081)
           DOY=$((10#$DOY))
-          BUILD=1
-          while git ls-remote --exit-code --tags origin "refs/tags/${YEAR}.${DOY}.${BUILD}" >/dev/null 2>&1; do
-            BUILD=$((BUILD + 1))
-          done
+          # Next build = highest existing build for today + 1
+          LAST=$(grep -oE "refs/tags/${YEAR}\.${DOY}\.[0-9]+$" "$RUNNER_TEMP/remote-tags.txt" \
+            | awk -F. '{ print $NF }' | sort -n | tail -1 || true)
+          BUILD=$(( ${LAST:-0} + 1 ))
           echo "tag=${YEAR}.${DOY}.${BUILD}" >> "$GITHUB_OUTPUT"
 
       - name: Summarize changes for release notes
@@ -90,7 +101,7 @@ jobs:
             echo "### Grand Prix / session folders changed"
             echo '```'
             if git rev-parse --verify -q HEAD~1 >/dev/null; then
-              git diff --name-only HEAD~1 HEAD -- '*.json' \
+              git diff --name-only --no-renames HEAD~1 HEAD -- '*.json' \
                 | grep -E 'Grand Prix|Pre-Season' \
                 | cut -d/ -f1-2 \
                 | sort -u \
