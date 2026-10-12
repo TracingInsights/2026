@@ -501,10 +501,9 @@ def _process_telemetry_to_dict(telemetry: pd.DataFrame, data_key: str) -> dict:
 # straights and low/medium/high-speed sections as a percentage of the total
 # lap distance, e.g. sections/marina-bay-street-circuit.json:
 #     [["Straight", 0.00, 5.96], ["Low", 5.96, 13.44], ...]
-# Files are named after circuits (e.g. marina-bay-street-circuit.json), not
-# events, so known events are mapped to their circuit's file below. Unmapped
-# events fall back to matching slugified circuit names. Only some circuits
-# have a breakdown; circuits without a file are skipped.
+# Each event is mapped explicitly to its sections file below; there is no
+# fuzzy matching on event or circuit names. Events without an entry (no
+# breakdown for their circuit yet) get no sections.
 SECTIONS_DIR = "sections"
 VALID_SECTION_TYPES = {"Straight", "Low", "Medium", "High"}
 
@@ -513,10 +512,16 @@ EVENT_SECTIONS_FILE = {
     "Australian Grand Prix": "albert-park-circuit",
     "Austrian Grand Prix": "red-bull-ring",
     "Azerbaijan Grand Prix": "baku-city-circuit",
-    "Bahrain Grand Prix": "bahrain-international-circuit",
+    # No "Bahrain Grand Prix": held at Sepang (Kuala Lumpur) in 2026, which
+    # has no sections file.
     "Barcelona Grand Prix": "circuit-de-barcelona-catalunya",
     "Belgian Grand Prix": "circuit-de-spa-francorchamps",
+    "British Grand Prix": "silverstone",
+    "Canadian Grand Prix": "canada",
     "Dutch Grand Prix": "circuit-zandvoort",
+    "Emilia Romagna Grand Prix": "emilia",
+    "Hungarian Grand Prix": "hungary",
+    "Italian Grand Prix": "monza",
     "Miami Grand Prix": "miami-international-autodrome",
     "Monaco Grand Prix": "circuit-de-monaco",
     "Saudi Arabian Grand Prix": "jeddah-corniche-circuit",
@@ -532,117 +537,43 @@ EVENT_SECTIONS_FILE = {
 }
 
 
-def _slug_candidates(name) -> List[str]:
-    """Hyphenated slug candidates for a circuit/event name.
-
-    "Marina Bay Street Circuit" -> ["marina-bay-street-circuit"]
-    """
-    lowered = str(name).strip().lower()
-    if not lowered:
-        return []
-
-    def slugify(value):
-        return "-".join(
-            "".join(ch if ch.isalnum() else " " for ch in value).split()
-        )
-
-    candidates = []
-    for variant in (lowered.replace("grand prix", " "), lowered):
-        slug = slugify(variant)
-        if slug and slug not in candidates:
-            candidates.append(slug)
-    return candidates
-
-
-def _sections_file_stems() -> List[str]:
-    """Section file names in SECTIONS_DIR without the .json extension."""
-    try:
-        return [
-            fn[: -len(".json")]
-            for fn in os.listdir(SECTIONS_DIR)
-            if fn.endswith(".json")
-        ]
-    except OSError:
-        return []
-
-
-def _load_circuit_sections(
-    event_name=None, session_info=None, extra_names=None
-) -> Optional[List[Tuple[str, float, float]]]:
-    """Load sections/<circuit>.json for this event's circuit, if one exists.
+def _load_circuit_sections(event_name) -> Optional[List[Tuple[str, float, float]]]:
+    """Load the sections file mapped to this event in EVENT_SECTIONS_FILE.
 
     Sections are [type, start_percent, end_percent] rows where the bounds are
-    a percentage of the total lap distance. Returns None when no section
-    breakdown exists for this circuit.
+    a percentage of the total lap distance. Returns None when the event has
+    no mapped sections file.
     """
-    names = [event_name] if event_name else []
-    if session_info:
-        meeting = session_info.get("Meeting") or {}
-        circuit = meeting.get("Circuit") or {}
-        names.extend(
-            str(value)
-            for value in (
-                meeting.get("Name"),
-                circuit.get("ShortName"),
-                circuit.get("Name"),
-                meeting.get("Location"),
-            )
-            if value
-        )
-    names.extend(name for name in (extra_names or []) if name)
+    stem = EVENT_SECTIONS_FILE.get(event_name)
+    if stem is None:
+        return None
 
-    candidates: List[str] = []
-    for name in names:
-        mapped = EVENT_SECTIONS_FILE.get(str(name))
-        if mapped and mapped not in candidates:
-            candidates.append(mapped)
-        for slug in _slug_candidates(name):
-            if slug not in candidates:
-                candidates.append(slug)
-
-    # Exact file-name matches first; then fall back to circuit-named files
-    # that contain every word of a candidate (e.g. "monaco" matches
-    # "circuit-de-monaco.json", "spa-francorchamps" matches
-    # "circuit-de-spa-francorchamps.json").
-    available = _sections_file_stems()
-    stems = [slug for slug in candidates if slug in available]
-    if not stems:
-        for slug in candidates:
-            tokens = set(slug.split("-"))
-            for stem in available:
-                if tokens and tokens <= set(stem.split("-")) and stem not in stems:
-                    stems.append(stem)
-
-    for slug in stems:
-        path = os.path.join(SECTIONS_DIR, f"{slug}.json")
-        if not os.path.isfile(path):
-            continue
-        try:
-            with open(path, "rb") as f:
-                raw = orjson.loads(f.read())
-            if not isinstance(raw, list) or not raw:
-                raise ValueError("must be a non-empty list of section rows")
-            rows = []
-            for entry in raw:
-                if isinstance(entry, dict):
-                    section_type = entry.get("Type") or entry.get("type")
-                    start = entry.get("StartPercent", entry.get("start"))
-                    end = entry.get("EndPercent", entry.get("end"))
-                else:
-                    section_type, start, end = entry[0], entry[1], entry[2]
-                section_type = str(section_type).strip().capitalize()
-                if section_type not in VALID_SECTION_TYPES:
-                    raise ValueError(f"invalid section type {section_type!r}")
-                start = float(start)
-                end = float(end)
-                if not 0.0 <= start < end <= 100.0:
-                    raise ValueError(f"invalid section bounds {start}-{end}")
-                rows.append((section_type, start, end))
-            return rows
-        except Exception as e:
-            logger.error(f"Error loading circuit sections from {path}: {e}")
-            return None
-    return None
+    path = os.path.join(SECTIONS_DIR, f"{stem}.json")
+    try:
+        with open(path, "rb") as f:
+            raw = orjson.loads(f.read())
+        if not isinstance(raw, list) or not raw:
+            raise ValueError("must be a non-empty list of section rows")
+        rows = []
+        for entry in raw:
+            if isinstance(entry, dict):
+                section_type = entry.get("Type") or entry.get("type")
+                start = entry.get("StartPercent", entry.get("start"))
+                end = entry.get("EndPercent", entry.get("end"))
+            else:
+                section_type, start, end = entry[0], entry[1], entry[2]
+            section_type = str(section_type).strip().capitalize()
+            if section_type not in VALID_SECTION_TYPES:
+                raise ValueError(f"invalid section type {section_type!r}")
+            start = float(start)
+            end = float(end)
+            if not 0.0 <= start < end <= 100.0:
+                raise ValueError(f"invalid section bounds {start}-{end}")
+            rows.append((section_type, start, end))
+        return rows
+    except Exception as e:
+        logger.error(f"Error loading circuit sections from {path}: {e}")
+        return None
 
 
 def _get_reference_lap_distance(f1session) -> Optional[float]:
@@ -1052,9 +983,7 @@ class SeasonSessionExtractor:
         try:
             f1session = self.get_session(event_name, session_name)
             circuit_key = f1session.session_info["Meeting"]["Circuit"]["Key"]
-            section_rows = _load_circuit_sections(
-                event_name, f1session.session_info
-            )
+            section_rows = _load_circuit_sections(event_name)
             reference_lap_distance = _get_reference_lap_distance(f1session)
 
             try:

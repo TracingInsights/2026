@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -26,16 +25,24 @@ REQUEST_TIMEOUT = 30
 
 VALID_SECTION_TYPES = {"Straight", "Low", "Medium", "High"}
 
-# Circuit section breakdowns live in sections/<circuit>.json, named after
-# the circuit (e.g. sections/marina-bay-street-circuit.json), not the event.
+# Circuit section breakdowns live in sections/<circuit>.json. Each event is
+# mapped explicitly to its file (no fuzzy matching on event/circuit names);
+# events without an entry get no sections.
 # Event name -> sections/ file name (without the .json extension).
 EVENT_SECTIONS_FILE: dict[str, str] = {
     "Australian Grand Prix": "albert-park-circuit",
     "Austrian Grand Prix": "red-bull-ring",
     "Azerbaijan Grand Prix": "baku-city-circuit",
+    # No "Bahrain Grand Prix": held at Sepang (Kuala Lumpur) in 2026, which
+    # has no sections file.
     "Barcelona Grand Prix": "circuit-de-barcelona-catalunya",
     "Belgian Grand Prix": "circuit-de-spa-francorchamps",
+    "British Grand Prix": "silverstone",
+    "Canadian Grand Prix": "canada",
     "Dutch Grand Prix": "circuit-zandvoort",
+    "Emilia Romagna Grand Prix": "emilia",
+    "Hungarian Grand Prix": "hungary",
+    "Italian Grand Prix": "monza",
     "Miami Grand Prix": "miami-international-autodrome",
     "Monaco Grand Prix": "circuit-de-monaco",
     "Saudi Arabian Grand Prix": "jeddah-corniche-circuit",
@@ -263,42 +270,6 @@ def assign_marker_distances(
     return resolved_markers
 
 
-def _slug_candidates(name: str) -> list[str]:
-    """Return hyphenated slug candidates for a circuit/event name.
-
-    "Marina Bay Street Circuit" -> ["marina-bay-street-circuit"]
-    """
-    lowered = str(name).strip().lower()
-    if not lowered:
-        return []
-
-    def _slugify(value: str) -> str:
-        return "-".join(
-            "".join(ch if ch.isalnum() else " " for ch in value).split()
-        )
-
-    stripped = _slugify(re.sub(r"\s*grand\s*prix\s*", " ", lowered))
-    full_slug = _slugify(lowered)
-
-    candidates = []
-    for slug in (stripped, full_slug):
-        if slug and slug not in candidates:
-            candidates.append(slug)
-    return candidates
-
-
-def _sections_file_stems() -> list[str]:
-    """Section file names in SECTIONS_DIR without the .json extension."""
-    try:
-        return [
-            fn[: -len(".json")]
-            for fn in os.listdir(SECTIONS_DIR)
-            if fn.endswith(".json")
-        ]
-    except OSError:
-        return []
-
-
 def parse_circuit_sections(raw: Any) -> list[tuple[str, float, float]]:
     """Parse and validate raw section rows: [type, start_percent, end_percent]."""
     if not isinstance(raw, list) or not raw:
@@ -335,60 +306,19 @@ def parse_circuit_sections(raw: Any) -> list[tuple[str, float, float]]:
     return rows
 
 
-def load_circuit_sections(
-    event_name: str, session_info: dict[str, Any] | None = None
-) -> list[tuple[str, float, float]] | None:
-    """Load sections/<circuit>.json for this event, if one exists.
+def load_circuit_sections(event_name: str) -> list[tuple[str, float, float]] | None:
+    """Load the sections file mapped to this event in EVENT_SECTIONS_FILE.
 
-    Files are named after circuits, not events, so known events are mapped
-    via EVENT_SECTIONS_FILE; other names fall back to slug matching. Returns
-    None when no section breakdown has been added for this circuit yet (only
-    some circuits have one).
+    Returns None when the event has no mapped sections file (only some
+    circuits have a breakdown).
     """
-    names = [event_name]
-    if session_info:
-        meeting = session_info.get("Meeting") or {}
-        circuit = meeting.get("Circuit") or {}
-        names.extend(
-            str(value)
-            for value in (
-                meeting.get("Name"),
-                circuit.get("ShortName"),
-                circuit.get("Name"),
-                meeting.get("Location"),
-            )
-            if value
-        )
+    stem = EVENT_SECTIONS_FILE.get(event_name)
+    if stem is None:
+        return None
 
-    candidates: list[str] = []
-    for name in names:
-        mapped = EVENT_SECTIONS_FILE.get(str(name))
-        if mapped and mapped not in candidates:
-            candidates.append(mapped)
-        for slug in _slug_candidates(name):
-            if slug not in candidates:
-                candidates.append(slug)
-
-    # Exact file-name matches first; then fall back to circuit-named files
-    # that contain every word of a candidate (e.g. "monaco" matches
-    # "circuit-de-monaco.json").
-    available = _sections_file_stems()
-    stems = [slug for slug in candidates if slug in available]
-    if not stems:
-        for slug in candidates:
-            tokens = set(slug.split("-"))
-            for stem in available:
-                if tokens and tokens <= set(stem.split("-")) and stem not in stems:
-                    stems.append(stem)
-
-    for slug in stems:
-        path = os.path.join(SECTIONS_DIR, f"{slug}.json")
-        if not os.path.isfile(path):
-            continue
-        with open(path, encoding="utf-8") as f:
-            return parse_circuit_sections(json.load(f))
-
-    return None
+    path = os.path.join(SECTIONS_DIR, f"{stem}.json")
+    with open(path, encoding="utf-8") as f:
+        return parse_circuit_sections(json.load(f))
 
 
 def build_section_entries(
@@ -519,7 +449,7 @@ def get_session_circuit_info(
     telemetry_samples = get_reference_telemetry_samples(fastest_lap)
     circuit_info = add_marker_distance_from_samples(circuit_info, telemetry_samples)
 
-    section_rows = load_circuit_sections(event_name, session.session_info)
+    section_rows = load_circuit_sections(event_name)
     if section_rows is not None:
         total_lap_distance = get_total_lap_distance(telemetry_samples)
         circuit_info = add_sections_local(
