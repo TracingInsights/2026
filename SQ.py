@@ -26,6 +26,8 @@ import pandas as pd
 import psutil
 import requests
 
+from utils import build_circuit_details, get_mv_circuit_payload
+
 # ---------------------------------------------------------------------------
 # Constants & Configuration
 # ---------------------------------------------------------------------------
@@ -985,6 +987,7 @@ class SeasonSessionExtractor:
             circuit_key = f1session.session_info["Meeting"]["Circuit"]["Key"]
             section_rows = _load_circuit_sections(event_name)
             reference_lap_distance = _get_reference_lap_distance(f1session)
+            mv_payload = get_mv_circuit_payload(f1session)
 
             try:
                 circuit_info = f1session.get_circuit_info()
@@ -1000,6 +1003,7 @@ class SeasonSessionExtractor:
                 _add_sections_to_corner_info(
                     result, section_rows, reference_lap_distance
                 )
+                result.update(build_circuit_details(mv_payload, circuit_info))
                 self._circuit_cache[cache_key] = result
                 return result
             except (AttributeError, KeyError):
@@ -1016,6 +1020,7 @@ class SeasonSessionExtractor:
                     _add_sections_to_corner_info(
                         result, section_rows, reference_lap_distance
                     )
+                    result.update(build_circuit_details(mv_payload))
                     self._circuit_cache[cache_key] = result
                     return result
 

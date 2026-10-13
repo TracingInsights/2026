@@ -638,6 +638,252 @@
           "description": "End of each section band as a distance from the start/finish line, converted from percentage using the reference (fastest) lap's total lap distance. null when the reference lap distance is unavailable. Column style (R.py etc.): array with one entry per section band.",
           "source": "sections/<circuit>.json (curated) + fastest-lap reference",
           "unit": "meter array or None"
+        },
+        "CornerLetter": {
+          "full_name": "Corner Letter",
+          "description": "Letter suffix that distinguishes corners sharing a number, e.g. 'A' for corner 1A at the Hungaroring. Empty string when the corner has no letter. Column style: array aligned with CornerNumber.",
+          "source": "MultiViewer API",
+          "unit": "String"
+        },
+        "CornerLabel": {
+          "full_name": "Corner Label",
+          "description": "Display label for the corner: CornerNumber followed by CornerLetter, e.g. '1', '1A', '12A'. Column style: array aligned with CornerNumber.",
+          "source": "MultiViewer API",
+          "unit": "String"
+        },
+        "MVDistance": {
+          "full_name": "MultiViewer Distance",
+          "description": "MultiViewer's own distance of the corner from the start/finish line (the API's 'length' field, converted from decimeters). It is fixed for the circuit layout, unlike Distance, which is computed from each session's fastest-lap telemetry, so it is useful as a cross-check when a session's reference lap has bad position data. Column style: array aligned with CornerNumber.",
+          "source": "MultiViewer API",
+          "unit": "meter"
+        },
+        "MarshalLightNumber": {
+          "full_name": "Marshal Light Number",
+          "description": "Number of each marshal light.",
+          "source": "MultiViewer API",
+          "unit": "Integer array"
+        },
+        "MarshalLightX": {
+          "full_name": "Marshal Light X Coordinate",
+          "description": "Horizontal position of each marshal light on the track map (same coordinate system as the corner X).",
+          "source": "MultiViewer API",
+          "unit": "Same unit as X"
+        },
+        "MarshalLightY": {
+          "full_name": "Marshal Light Y Coordinate",
+          "description": "Vertical position of each marshal light on the track map (same coordinate system as the corner Y).",
+          "source": "MultiViewer API",
+          "unit": "Same unit as Y"
+        },
+        "MarshalLightAngle": {
+          "full_name": "Marshal Light Angle",
+          "description": "Angle in degrees used to visually offset the marshal light marker on a track map (usually orthogonal to the track).",
+          "source": "MultiViewer API",
+          "unit": "° (degrees) array"
+        },
+        "MarshalLightDistance": {
+          "full_name": "Marshal Light Distance",
+          "description": "Location of each marshal light as a distance from the start/finish line, computed from the reference (fastest) lap's telemetry exactly like the corner Distance. Falls back to MarshalLightMVDistance when FastF1 circuit info is unavailable.",
+          "source": "MultiViewer API + fastest-lap reference",
+          "unit": "meter array"
+        },
+        "MarshalLightMVDistance": {
+          "full_name": "Marshal Light MultiViewer Distance",
+          "description": "MultiViewer's own distance of each marshal light from the start/finish line (see MVDistance).",
+          "source": "MultiViewer API",
+          "unit": "meter array"
+        },
+        "MarshalSectorNumber": {
+          "full_name": "Marshal Sector Number",
+          "description": "Number of each marshal sector.",
+          "source": "MultiViewer API",
+          "unit": "Integer array"
+        },
+        "MarshalSectorX": {
+          "full_name": "Marshal Sector X Coordinate",
+          "description": "Horizontal position of each marshal sector on the track map (same coordinate system as the corner X).",
+          "source": "MultiViewer API",
+          "unit": "Same unit as X"
+        },
+        "MarshalSectorY": {
+          "full_name": "Marshal Sector Y Coordinate",
+          "description": "Vertical position of each marshal sector on the track map (same coordinate system as the corner Y).",
+          "source": "MultiViewer API",
+          "unit": "Same unit as Y"
+        },
+        "MarshalSectorAngle": {
+          "full_name": "Marshal Sector Angle",
+          "description": "Angle in degrees used to visually offset the marshal sector marker on a track map (usually orthogonal to the track).",
+          "source": "MultiViewer API",
+          "unit": "° (degrees) array"
+        },
+        "MarshalSectorDistance": {
+          "full_name": "Marshal Sector Distance",
+          "description": "Location of each marshal sector as a distance from the start/finish line, computed from the reference (fastest) lap's telemetry exactly like the corner Distance. Falls back to MarshalSectorMVDistance when FastF1 circuit info is unavailable.",
+          "source": "MultiViewer API + fastest-lap reference",
+          "unit": "meter array"
+        },
+        "MarshalSectorMVDistance": {
+          "full_name": "Marshal Sector MultiViewer Distance",
+          "description": "MultiViewer's own distance of each marshal sector from the start/finish line (see MVDistance).",
+          "source": "MultiViewer API",
+          "unit": "meter array"
+        },
+        "CircuitKey": {
+          "full_name": "Circuit Key",
+          "description": "Unique circuit key from the F1 live timing API.",
+          "source": "MultiViewer API",
+          "unit": "Integer"
+        },
+        "CircuitName": {
+          "full_name": "Circuit Name",
+          "description": "Circuit name as listed by MultiViewer, e.g. 'Hungaroring'.",
+          "source": "MultiViewer API",
+          "unit": "String"
+        },
+        "Location": {
+          "full_name": "Location",
+          "description": "City or area of the circuit, e.g. 'Budapest'.",
+          "source": "MultiViewer API",
+          "unit": "String"
+        },
+        "CountryName": {
+          "full_name": "Country Name",
+          "description": "Country of the circuit.",
+          "source": "MultiViewer API",
+          "unit": "String"
+        },
+        "CountryKey": {
+          "full_name": "Country Key",
+          "description": "Country key from the F1 live timing API.",
+          "source": "MultiViewer API",
+          "unit": "Integer"
+        },
+        "CountryIocCode": {
+          "full_name": "Country IOC Code",
+          "description": "Three-letter IOC country code, e.g. 'HUN'.",
+          "source": "MultiViewer API",
+          "unit": "String"
+        },
+        "PitLossNormal": {
+          "full_name": "Pit Loss (Green Flag)",
+          "description": "Estimated time lost by making a pit stop under green-flag conditions. null when MultiViewer has no estimate for the circuit.",
+          "source": "MultiViewer API",
+          "unit": "Seconds or None"
+        },
+        "PitLossSC": {
+          "full_name": "Pit Loss (Safety Car)",
+          "description": "Estimated time lost by making a pit stop under the Safety Car. null when MultiViewer has no estimate for the circuit.",
+          "source": "MultiViewer API",
+          "unit": "Seconds or None"
+        },
+        "PitLossVSC": {
+          "full_name": "Pit Loss (Virtual Safety Car)",
+          "description": "Estimated time lost by making a pit stop under the Virtual Safety Car. null when MultiViewer has no estimate for the circuit.",
+          "source": "MultiViewer API",
+          "unit": "Seconds or None"
+        },
+        "LayoutYear": {
+          "full_name": "Layout Year",
+          "description": "Season of the MultiViewer layout data in this file. MultiViewer does not publish every season, so the most recent available year is used (e.g. 2021 for the 2026 Hungarian Grand Prix). All Layout* fields, the Track* fields and the marker positions describe this season, not the current session.",
+          "source": "MultiViewer API",
+          "unit": "Year"
+        },
+        "LayoutRound": {
+          "full_name": "Layout Round",
+          "description": "Championship round of the layout source meeting.",
+          "source": "MultiViewer API",
+          "unit": "Integer"
+        },
+        "LayoutRaceDate": {
+          "full_name": "Layout Race Date",
+          "description": "Race date of the layout source meeting.",
+          "source": "MultiViewer API",
+          "unit": "Date (YYYY-MM-DD)"
+        },
+        "LayoutMeetingKey": {
+          "full_name": "Layout Meeting Key",
+          "description": "F1 live timing meeting key of the layout source meeting. null when not provided.",
+          "source": "MultiViewer API",
+          "unit": "Integer or None"
+        },
+        "LayoutMeetingName": {
+          "full_name": "Layout Meeting Name",
+          "description": "Name of the layout source meeting, e.g. 'Hungarian Grand Prix'. null when not provided.",
+          "source": "MultiViewer API",
+          "unit": "String or None"
+        },
+        "LayoutMeetingOfficialName": {
+          "full_name": "Layout Meeting Official Name",
+          "description": "Official (sponsor) name of the layout source meeting. null when not provided.",
+          "source": "MultiViewer API",
+          "unit": "String or None"
+        },
+        "LayoutLapDriverNumber": {
+          "full_name": "Layout Lap Driver Number",
+          "description": "Driver number of the reference lap MultiViewer used to build the track outline.",
+          "source": "MultiViewer API",
+          "unit": "String"
+        },
+        "LayoutLapNumber": {
+          "full_name": "Layout Lap Number",
+          "description": "Lap number of the reference lap.",
+          "source": "MultiViewer API",
+          "unit": "Integer"
+        },
+        "LayoutLapSession": {
+          "full_name": "Layout Lap Session",
+          "description": "Session of the reference lap, e.g. 'FP1' or 'Practice 1'.",
+          "source": "MultiViewer API",
+          "unit": "String"
+        },
+        "LayoutLapTime": {
+          "full_name": "Layout Lap Time",
+          "description": "Lap time of the reference lap.",
+          "source": "MultiViewer API",
+          "unit": "Seconds"
+        },
+        "LayoutLapStartDate": {
+          "full_name": "Layout Lap Start Date",
+          "description": "Timestamp at which the reference lap started.",
+          "source": "MultiViewer API",
+          "unit": "ISO 8601 timestamp"
+        },
+        "LayoutLapStartSessionTime": {
+          "full_name": "Layout Lap Start Session Time",
+          "description": "Session time at which the reference lap started.",
+          "source": "MultiViewer API",
+          "unit": "Seconds"
+        },
+        "LayoutLapSessionStartTime": {
+          "full_name": "Layout Lap Session Start Time",
+          "description": "Session time at which the reference lap's session started.",
+          "source": "MultiViewer API",
+          "unit": "Seconds"
+        },
+        "TrackX": {
+          "full_name": "Track Outline X",
+          "description": "X coordinates of points along the circuit, in lap order. Plot TrackX against TrackY to draw the track map.",
+          "source": "MultiViewer API",
+          "unit": "Same unit as X"
+        },
+        "TrackY": {
+          "full_name": "Track Outline Y",
+          "description": "Y coordinates of points along the circuit, aligned with TrackX.",
+          "source": "MultiViewer API",
+          "unit": "Same unit as Y"
+        },
+        "TrackTime": {
+          "full_name": "Track Outline Time",
+          "description": "Elapsed time along MultiViewer's reference lap at each TrackX/TrackY point. Empty when MultiViewer does not provide it for the circuit.",
+          "source": "MultiViewer API",
+          "unit": "Seconds array"
+        },
+        "MiniSectorIndex": {
+          "full_name": "Mini-Sector Index",
+          "description": "Indices into TrackX/TrackY marking the end of each mini-sector. Empty when MultiViewer does not provide it for the circuit.",
+          "source": "MultiViewer API",
+          "unit": "Integer array"
         }
       }
     }

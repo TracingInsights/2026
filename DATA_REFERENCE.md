@@ -303,6 +303,83 @@ The two producers of `corners.json` store the bands in their own file style:
 
 Note: sections are only emitted when a `sections/<circuit>.json` file exists for the circuit; otherwise the band arrays are empty and per-corner `Section` values are `null`.
 
+### MultiViewer Circuit Data (column style)
+
+The column-style producers (`R.py`, `Q.py`, `FP1.py`-`FP3.py`, `SQ.py`, `SR.py`, `preseason.py`) also store everything else the MultiViewer circuit API returns, appended after the fields above (existing fields are unchanged). Built by `build_circuit_details()` in `utils.py`. Missing values are `null`; list fields that MultiViewer does not provide for a circuit are empty arrays.
+
+Corner letters: a few corners share a number and are told apart by a letter (at the Hungaroring: 1, **1A**, ..., 12, **12A**). `CornerNumber` stays an integer (so it repeats for those corners); use `CornerLabel` for the full name.
+
+**Per-corner**
+
+| Field | Full Name | Description | Unit |
+| --- | --- | --- | --- |
+| **CornerLetter** | Corner Letter | Letter suffix that distinguishes corners sharing a number, e.g. 'A' for corner 1A at the Hungaroring. Empty string when the corner has no letter. Aligned with `CornerNumber`. | String |
+| **CornerLabel** | Corner Label | Display label for the corner: CornerNumber followed by CornerLetter, e.g. '1', '1A', '12A'. Aligned with `CornerNumber`. | String |
+| **MVDistance** | MultiViewer Distance | MultiViewer's own distance of the corner from the start/finish line (the API's 'length' field, converted from decimeters). It is fixed for the circuit layout, unlike Distance, which is computed from each session's fastest-lap telemetry, so it is useful as a cross-check when a session's reference lap has bad position data. Aligned with `CornerNumber`. | meter |
+
+**Marshal lights (one entry per light)**
+
+| Field | Full Name | Description | Unit |
+| --- | --- | --- | --- |
+| **MarshalLightNumber** | Marshal Light Number | Number of each marshal light. | Integer array |
+| **MarshalLightX** | Marshal Light X Coordinate | Horizontal position of each marshal light on the track map (same coordinate system as the corner X). | Same unit as X |
+| **MarshalLightY** | Marshal Light Y Coordinate | Vertical position of each marshal light on the track map (same coordinate system as the corner Y). | Same unit as Y |
+| **MarshalLightAngle** | Marshal Light Angle | Angle in degrees used to visually offset the marshal light marker on a track map (usually orthogonal to the track). | ° (degrees) array |
+| **MarshalLightDistance** | Marshal Light Distance | Location of each marshal light as a distance from the start/finish line, computed from the reference (fastest) lap's telemetry exactly like the corner Distance. Falls back to MarshalLightMVDistance when FastF1 circuit info is unavailable. | meter array |
+| **MarshalLightMVDistance** | Marshal Light MultiViewer Distance | MultiViewer's own distance of each marshal light from the start/finish line (see MVDistance). | meter array |
+
+**Marshal sectors (one entry per sector)**
+
+| Field | Full Name | Description | Unit |
+| --- | --- | --- | --- |
+| **MarshalSectorNumber** | Marshal Sector Number | Number of each marshal sector. | Integer array |
+| **MarshalSectorX** | Marshal Sector X Coordinate | Horizontal position of each marshal sector on the track map (same coordinate system as the corner X). | Same unit as X |
+| **MarshalSectorY** | Marshal Sector Y Coordinate | Vertical position of each marshal sector on the track map (same coordinate system as the corner Y). | Same unit as Y |
+| **MarshalSectorAngle** | Marshal Sector Angle | Angle in degrees used to visually offset the marshal sector marker on a track map (usually orthogonal to the track). | ° (degrees) array |
+| **MarshalSectorDistance** | Marshal Sector Distance | Location of each marshal sector as a distance from the start/finish line, computed from the reference (fastest) lap's telemetry exactly like the corner Distance. Falls back to MarshalSectorMVDistance when FastF1 circuit info is unavailable. | meter array |
+| **MarshalSectorMVDistance** | Marshal Sector MultiViewer Distance | MultiViewer's own distance of each marshal sector from the start/finish line (see MVDistance). | meter array |
+
+**Circuit**
+
+| Field | Full Name | Description | Unit |
+| --- | --- | --- | --- |
+| **CircuitKey** | Circuit Key | Unique circuit key from the F1 live timing API. | Integer |
+| **CircuitName** | Circuit Name | Circuit name as listed by MultiViewer, e.g. 'Hungaroring'. | String |
+| **Location** | Location | City or area of the circuit, e.g. 'Budapest'. | String |
+| **CountryName** | Country Name | Country of the circuit. | String |
+| **CountryKey** | Country Key | Country key from the F1 live timing API. | Integer |
+| **CountryIocCode** | Country IOC Code | Three-letter IOC country code, e.g. 'HUN'. | String |
+| **PitLossNormal** | Pit Loss (Green Flag) | Estimated time lost by making a pit stop under green-flag conditions. null when MultiViewer has no estimate for the circuit. | Seconds or None |
+| **PitLossSC** | Pit Loss (Safety Car) | Estimated time lost by making a pit stop under the Safety Car. null when MultiViewer has no estimate for the circuit. | Seconds or None |
+| **PitLossVSC** | Pit Loss (Virtual Safety Car) | Estimated time lost by making a pit stop under the Virtual Safety Car. null when MultiViewer has no estimate for the circuit. | Seconds or None |
+
+**Layout source**
+
+| Field | Full Name | Description | Unit |
+| --- | --- | --- | --- |
+| **LayoutYear** | Layout Year | Season of the MultiViewer layout data in this file. MultiViewer does not publish every season, so the most recent available year is used (e.g. 2021 for the 2026 Hungarian Grand Prix). All Layout* fields, the Track* fields and the marker positions describe this season, not the current session. | Year |
+| **LayoutRound** | Layout Round | Championship round of the layout source meeting. | Integer |
+| **LayoutRaceDate** | Layout Race Date | Race date of the layout source meeting. | Date (YYYY-MM-DD) |
+| **LayoutMeetingKey** | Layout Meeting Key | F1 live timing meeting key of the layout source meeting. null when not provided. | Integer or None |
+| **LayoutMeetingName** | Layout Meeting Name | Name of the layout source meeting, e.g. 'Hungarian Grand Prix'. null when not provided. | String or None |
+| **LayoutMeetingOfficialName** | Layout Meeting Official Name | Official (sponsor) name of the layout source meeting. null when not provided. | String or None |
+| **LayoutLapDriverNumber** | Layout Lap Driver Number | Driver number of the reference lap MultiViewer used to build the track outline. | String |
+| **LayoutLapNumber** | Layout Lap Number | Lap number of the reference lap. | Integer |
+| **LayoutLapSession** | Layout Lap Session | Session of the reference lap, e.g. 'FP1' or 'Practice 1'. | String |
+| **LayoutLapTime** | Layout Lap Time | Lap time of the reference lap. | Seconds |
+| **LayoutLapStartDate** | Layout Lap Start Date | Timestamp at which the reference lap started. | ISO 8601 timestamp |
+| **LayoutLapStartSessionTime** | Layout Lap Start Session Time | Session time at which the reference lap started. | Seconds |
+| **LayoutLapSessionStartTime** | Layout Lap Session Start Time | Session time at which the reference lap's session started. | Seconds |
+
+**Track outline**
+
+| Field | Full Name | Description | Unit |
+| --- | --- | --- | --- |
+| **TrackX** | Track Outline X | X coordinates of points along the circuit, in lap order. Plot TrackX against TrackY to draw the track map. | Same unit as X |
+| **TrackY** | Track Outline Y | Y coordinates of points along the circuit, aligned with TrackX. | Same unit as Y |
+| **TrackTime** | Track Outline Time | Elapsed time along MultiViewer's reference lap at each TrackX/TrackY point. Empty when MultiViewer does not provide it for the circuit. | Seconds array |
+| **MiniSectorIndex** | Mini-Sector Index | Indices into TrackX/TrackY marking the end of each mini-sector. Empty when MultiViewer does not provide it for the circuit. | Integer array |
+
 
 
 ## 📚 Where to Find More Information
