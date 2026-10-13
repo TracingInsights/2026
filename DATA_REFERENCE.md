@@ -11,12 +11,13 @@ The repository uses two main extraction scripts. They share the same output form
 | Script | Primary Output | Extra Session Files | Notes |
 |---|---|---|---|
 | `R.py` | Per-driver `laptimes.json` and per-lap `{lap}_tel.json` telemetry | `weather.json`, `rcm.json`, `drivers.json`, `corners.json` | Full telemetry extraction; uses FastF1 + MultiViewer circuit API fallback. |
-| `LapTimes.py` | Per-driver `laptimes.json` only | None | Optimized lap-time-only extraction; enriches Race laps with official Ergast lap times and adds OpenF1 mini-sectors (`ms1`, `ms2`, `ms3`) and qualifying segments (`qs`). |
+| `LapTimes.py` | Per-driver `laptimes.json` only | None | Optimized lap-time-only extraction; enriches Race laps with official Ergast lap times and adds OpenF1 mini-sectors (`ms1`, `ms2`, `ms3`) and qualifying segments (`qs`). Also downloads OpenF1 team radio MP3s per session (`DOWNLOAD_TEAM_RADIO`). |
+| `team_radio.py` | Per-driver `radio/*.mp3` | `team_radio.json` | Team radio downloader used by `LapTimes.py`; run standalone to backfill every past session of the season. |
 
 **Data sources:**
 - **FastF1:** base lap timing, telemetry, weather, race control messages, circuit info, driver info.
 - **Ergast/Jolpica:** official Race lap times and positions (used by `LapTimes.py` to overwrite FastF1 Race `LapTime` and `Position`).
-- **OpenF1:** mini-sector segment data and session keys (used by `LapTimes.py` for `ms1`/`ms2`/`ms3`).
+- **OpenF1:** mini-sector segment data and session keys (used by `LapTimes.py` for `ms1`/`ms2`/`ms3`), and team radio recordings (`team_radio.json` + MP3s).
 - **MultiViewer API:** circuit corner geometry fallback when FastF1 circuit info is unavailable.
 
 ---
@@ -267,6 +268,22 @@ When weather data can be matched to individual laps, the following fields are ap
 | `'5'`       | Red Flag                          | The session or race is stopped due to unsafe conditions (serious accident, barrier damage, severe weather, etc.). Cars return to the pit lane or stop as directed.                       | Major incidents or conditions where continuing even behind a safety car is unsafe.                 | Timing may be paused depending on session type. Restart procedures vary by race regulations.                                                                     |
 | `'6'`       | Virtual Safety Car (VSC) Deployed | A neutralization procedure where drivers must follow a controlled speed delta instead of following a physical safety car.                                                                | Smaller incidents where marshals need time on track but a full safety car is unnecessary.          | Drivers maintain a regulated pace via dashboard delta timing rather than forming a queue behind a safety car.                                                    |
 | `'7'`       | Virtual Safety Car Ending         | Signals that the Virtual Safety Car period is about to end and racing will resume shortly.                                                                                               | Immediately before the VSC period concludes.                                                       | Drivers see the “VSC ending” notification on steering wheels and broadcast graphics. Status `'1'` will follow to confirm the return to normal racing conditions. |
+
+---
+
+## 🎙️ TEAM RADIO (`team_radio.json`)
+
+Index of the team radio messages broadcast during the session, sorted by time. The audio files themselves are stored at `<driver>/radio/<file>.mp3` inside the session folder, using the original file name from the F1 live timing archive (`VER_1_20261011_195602.mp3` = driver, number, local date, local time).
+
+| Abbreviation | Full Name | Description | Type |
+|---|---|---|---|
+| **drv** | Driver | 3 letter driver identifier; matches the driver folder name | String: "VER" |
+| **dNum** | Driver Number | The number on the car | String: "1" |
+| **date** | Date | UTC timestamp of the radio message, as reported by OpenF1 | ISO 8601 string |
+| **file** | File | Path of the MP3 relative to the session folder; `"None"` if the download failed | String: "VER/radio/VER_1_20261011_195602.mp3" |
+| **url** | Recording URL | Original recording on `livetiming.formula1.com` | URL string |
+
+Only the clips F1 chooses to broadcast are published, so this is a selection of messages, not the full radio log. Some sessions have no clips at all.
 
 ---
 

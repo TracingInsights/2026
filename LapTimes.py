@@ -13,6 +13,8 @@ Data sources:
 - FastF1: base lap data, weather, sector times, tyre info
 - Ergast (Race only): overwrites LapTime with Ergast's official lap times
 - OpenF1: adds mini-sector segment columns (ms1, ms2, ms3)
+- OpenF1: downloads team radio MP3s to {driver}/radio/ plus a per-session
+  team_radio.json index (see team_radio.py; toggle with DOWNLOAD_TEAM_RADIO)
 """
 
 import gc
@@ -29,6 +31,8 @@ import orjson
 import pandas as pd
 import psutil
 import requests
+
+from team_radio import fetch_team_radio, save_session_radios
 
 # ---------------------------------------------------------------------------
 # Constants & Configuration
@@ -95,6 +99,9 @@ if invalid_target_sessions:
     raise ValueError(
         "Invalid TARGET_SESSIONS value(s): " + ", ".join(invalid_target_sessions)
     )
+
+# Download OpenF1 team radio MP3s for every processed session.
+DOWNLOAD_TEAM_RADIO = True
 
 ORJSON_OPTS = orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_NON_STR_KEYS
 
@@ -722,6 +729,9 @@ class OpenF1Client:
         )
         return response if isinstance(response, list) else []
 
+    def get_team_radio(self, session_key: int) -> List[Dict[str, Any]]:
+        return fetch_team_radio(self._get, session_key)
+
 
 # ---------------------------------------------------------------------------
 # Season Session Extractor
@@ -1061,6 +1071,35 @@ class SeasonSessionExtractor:
         self._openf1_lap_cache[lap_cache_key] = lap_segments
         return lap_segments
 
+    def _download_team_radio(
+        self,
+        label: str,
+        base_dir: str,
+        session_key: Optional[int],
+        f1session: fastf1.core.Session,
+    ) -> None:
+        """Save the session's OpenF1 team radio clips into driver folders."""
+        if not DOWNLOAD_TEAM_RADIO or session_key is None:
+            return
+        try:
+            driver_codes: Dict[int, str] = {}
+            results = getattr(f1session, "results", None)
+            if results is not None and not results.empty:
+                for num, abbr in zip(
+                    results["DriverNumber"], results["Abbreviation"]
+                ):
+                    num_int = _coerce_int(num)
+                    if num_int is not None and isinstance(abbr, str) and abbr:
+                        driver_codes[num_int] = abbr
+
+            entries = self.openf1_client.get_team_radio(session_key)
+            if not entries:
+                logger.info("No team radio available for %s", label)
+                return
+            save_session_radios(entries, base_dir, driver_codes)
+        except Exception as exc:
+            logger.error("Team radio download failed for %s: %s", label, exc)
+
     # ------------------------------------------------------------------
     # Core lap data assembly
     # ------------------------------------------------------------------
@@ -1242,6 +1281,9 @@ class SeasonSessionExtractor:
             # Resolve OpenF1 session key once, shared across all drivers.
             openf1_session_key = self._resolve_openf1_session_key(
                 event_name, session_name, f1session, laps
+            )
+            self._download_team_radio(
+                label, base_dir, openf1_session_key, f1session
             )
 
             laptimes_keys = _laptimes_keys_for_session(session_name)

@@ -36,7 +36,11 @@ Each Grand Prix weekend is organized by event and session. Inside each session f
 │   │   ├── rcm.json
 │   │   ├── corners.json
 │   │   ├── session_laptimes.json
-│   │   └── weather.json
+│   │   ├── team_radio.json
+│   │   ├── weather.json
+│   │   └── <driver>/
+│   │       └── radio/
+│   │           └── <clip>.mp3
 │   ├── Practice 2/
 │   ├── Practice 3/
 │   ├── Qualifying/
@@ -89,6 +93,19 @@ curl -L -o VER.webp "https://raw.githubusercontent.com/TracingInsights/2026/main
 ```
 
 To refresh after new driver/team pairings appear in `drivers.json`, run `python3 download_images.py` (add `--force` to re-download everything, or `--only cars` for a single set).
+
+---
+
+## 🎙️ Team Radio
+
+Team radio clips published by [OpenF1](https://openf1.org) are saved as MP3 files in each driver's folder, with an index per session:
+
+| Path | Contents |
+|---|---|
+| `<event>/<session>/<driver>/radio/<file>.mp3` | Original team radio recording from the F1 live timing archive |
+| `<event>/<session>/team_radio.json` | Every clip of the session sorted by time: driver, driver number, UTC date, local file path, and source URL |
+
+Only the clips F1 broadcasts are available, so most sessions have between a handful and a few dozen messages. Some early-season sessions have none on OpenF1. `LapTimes.py` downloads the radios for the sessions it processes. Run `python3 team_radio.py` to backfill every session of the season that has already started; existing files are skipped.
 
 ---
 
@@ -355,6 +372,7 @@ If you have any feedback, please reach out to us at https://tracinginsights.com/
 - [FastF1](https://github.com/theOehrly/Fast-F1)
 - [MultiViewer](https://github.com/f1multiviewer)
 - [Ergast/Jolpica](https://github.com/jolpica/jolpica-f1)
+- [OpenF1](https://openf1.org)
 
 ---
 

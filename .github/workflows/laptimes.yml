@@ -22,6 +22,7 @@ jobs:
             cache_preseason/1.txt
             requirements.txt
             LapTimes.py            
+            team_radio.py
             utils.py
             .github/actions/tailscale-exit-node
           sparse-checkout-cone-mode: false    
@@ -64,7 +65,7 @@ jobs:
           
           # Find all JSON files created/modified by the script
           # Add them with --sparse flag to allow adding outside sparse-checkout
-          find . -type f -name "*.json" -not -path "./.git/*" -exec git add --force --sparse {} +
+          find . -type f \( -name "*.json" -o -name "*.mp3" \) -not -path "./.git/*" -exec git add --force --sparse {} +
           
           # Also add the log file if it exists
           if [ -f "laptimes_extraction.log" ]; then

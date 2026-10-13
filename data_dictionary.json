@@ -887,6 +887,41 @@
           "unit": "Integer array"
         }
       }
+    },
+    "team_radio.json": {
+      "description": "🎙️ TEAM RADIO",
+      "fields": {
+        "drv": {
+          "full_name": "Driver",
+          "description": "3 letter driver identifier; matches the driver folder name",
+          "source": "OpenF1",
+          "type": "String: \"VER\""
+        },
+        "dNum": {
+          "full_name": "Driver Number",
+          "description": "The number on the car",
+          "source": "OpenF1",
+          "type": "String: \"1\""
+        },
+        "date": {
+          "full_name": "Date",
+          "description": "UTC timestamp of the radio message",
+          "source": "OpenF1",
+          "type": "ISO 8601 string"
+        },
+        "file": {
+          "full_name": "File",
+          "description": "Path of the MP3 relative to the session folder; \"None\" if the download failed",
+          "source": "OpenF1",
+          "type": "String: \"VER/radio/VER_1_20261011_195602.mp3\""
+        },
+        "url": {
+          "full_name": "Recording URL",
+          "description": "Original recording on livetiming.formula1.com",
+          "source": "OpenF1",
+          "type": "URL string"
+        }
+      }
     }
   }
 }
