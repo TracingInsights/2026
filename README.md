@@ -49,10 +49,46 @@ Each Grand Prix weekend is organized by event and session. Inside each session f
 │   ├── Sprint Qualifying/
 │   ├── Sprint/
 │   └── Race/
+├── images/
+│   ├── drivers/
+│   │   ├── Red Bull Racing/
+│   │   │   ├── VER.webp
+│   │   │   └── LAW.webp
+│   │   ├── Racing Bulls/
+│   │   │   ├── LAW.webp
+│   │   │   └── TSU.webp
+│   │   └── ...
+│   ├── headshots/
+│   │   └── <team>/<driver>.png
+│   ├── cars/
+│   │   └── <team>.webp
+│   └── manifest.json
 └── ...
 ```
 
 Sessions may include: **Practice 1/2/3**, **Qualifying**, **Sprint Qualifying**, **Sprint**, and **Race**.
+
+---
+
+## 🖼️ Driver & Car Images
+
+Official Formula 1 images are saved under `images/`, keyed by the `team` and `driver` fields of `drivers.json` so a path can be built straight from any entry:
+
+| Folder | Contents | Source |
+|---|---|---|
+| `images/drivers/<team>/<driver>.webp` | Full-body driver cutout (transparent WebP, 1336 × 3840) | [formula1.com/en/drivers](https://www.formula1.com/en/drivers) |
+| `images/headshots/<team>/<driver>.png` | 840 × 840 headshot, the source asset behind the thumbnail linked by the `url` field in `drivers.json` | `media.formula1.com` |
+| `images/cars/<team>.webp` | Car side view (transparent WebP) | [formula1.com/en/teams](https://www.formula1.com/en/teams) |
+
+Every file is the untransformed asset served by `media.formula1.com`, with no resizing or re-encoding. Driver images are keyed by driver **and** team because the pairing changes mid-season: Liam Lawson stood in for Isack Hadjar at Red Bull Racing for three Grands Prix while Yuki Tsunoda took his Racing Bulls seat, so there is a `Racing Bulls/LAW.webp`, a `Red Bull Racing/LAW.webp` and a `Racing Bulls/TSU.webp`. `images/manifest.json` lists every file with the driver's name, pixel size and source URL. Race drivers are 1336 × 3840; reserve and test drivers only exist on the host as 128 × 128 images, and that is what is saved for them. Headshots exist only for drivers with a `url` in `drivers.json`.
+
+Fetch one directly:
+
+```bash
+curl -L -o VER.webp "https://raw.githubusercontent.com/TracingInsights/2026/main/images/drivers/Red%20Bull%20Racing/VER.webp"
+```
+
+To refresh after new driver/team pairings appear in `drivers.json`, run `python3 download_images.py` (add `--force` to re-download everything, or `--only cars` for a single set).
 
 ---
 

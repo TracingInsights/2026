@@ -280,7 +280,8 @@
           "full_name": "Headshot URL",
           "description": "Web link to the driver's official headshot photo",
           "source": "FastF1",
-          "type": "URL string"
+          "type": "URL string",
+          "notes": "This is the small 93px rendition. Full-size official images are saved in the repo under images/, keyed by driver and team: drivers/<team>/<driver>.webp (full-body cutout), headshots/<team>/<driver>.png (840px headshot behind this url) and cars/<team>.webp; see images/manifest.json. \"None\" when no official headshot exists (reserve/test drivers)."
         }
       }
     },

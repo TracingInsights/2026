@@ -132,6 +132,8 @@ Static information about each driver that doesn't change during a session.
 | **tc** | Team Color | Official team color in hexadecimal format | Hex string: "4781D7" (Red Bull's blue), "ED1131" (Ferrari red) |
 | **url** | Headshot URL | Web link to the driver's official headshot photo | URL string |
 
+Official images for every driver/team pairing are stored in the repo: the full-body cutout from formula1.com/en/drivers at `images/drivers/<team>/<driver>.webp`, the 840 × 840 headshot behind this `url` at `images/headshots/<team>/<driver>.png`, and each team's car from formula1.com/en/teams at `images/cars/<team>.webp`. All are untransformed source assets; `images/manifest.json` lists the pixel size and source URL of every file. Keying by driver **and** team means mid-season substitutions (Lawson at Red Bull Racing, Tsunoda at Racing Bulls) each get their own file. Reserve and test drivers only exist on the host as 128 × 128 driver images and have no headshot. Run `python3 download_images.py` to refresh.
+
 
 
 ## ⏱️ LAP TIMES DATA (`laptimes.json`)
