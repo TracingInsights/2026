@@ -23,6 +23,7 @@ jobs:
             requirements.txt
             corner.py            
             utils.py
+            sections/
             .github/actions/tailscale-exit-node
           sparse-checkout-cone-mode: false    
       - name: Set up Python
