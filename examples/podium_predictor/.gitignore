@@ -1,0 +1,11 @@
+.venv/
+.f1_cache/
+v2_outputs/
+__pycache__/
+*.py[cod]
+*.log
+.matplotlib/
+cota_prediction*.csv
+cota_prediction*.png
+cota_prediction_metadata.json
+race_trace.png
