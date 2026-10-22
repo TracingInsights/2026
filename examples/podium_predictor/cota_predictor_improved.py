@@ -4,11 +4,13 @@ COTA (Circuit of the Americas) race winner & podium predictor.
 
 Data sources
   1. Jolpica-F1 (open Ergast successor): race results + qualifying, 2014 onwards.
-  3. Open-Meteo (free, no key): race-day weather (historical + forecast) and circuit altitude,
-     plus track statistics learned from history (pole win rate, DNF rate, safety cars, ...).
   2. TracingInsights (github.com/TracingInsights/<year>): per-session lap times for every
      driver. We turn them into *car pace* features (fuel-corrected race pace, qualifying
-     best-lap gap, qualifying top speed) - this is what captures the 2026 cars.
+     best-lap gap, qualifying top speed) and historical safety-car statistics.
+  3. Open-Meteo (free, no key): race-day weather (historical + forecast) and circuit altitude.
+
+Track statistics such as pole win rate, DNF rate, and grid-to-finish correlation are
+computed from prior Jolpica results; safety-car statistics come from prior lap data.
 
 Models   : XGBoost + Ridge (finishing position) and XGBoost classifiers (P(win), P(podium)).
 Modes    : post-qualifying (grid / quali features)  or  pre-qualifying (form + pace only).
@@ -16,15 +18,15 @@ Backtest : walk-forward on every past US GP at COTA - train only on races BEFORE
 
 Usage
 -----
-    pip install pandas numpy requests scikit-learn xgboost matplotlib
-    python cota_predictor.py                       # backtest + predict the upcoming COTA race
-    python cota_predictor.py --tracing-from 2022   # faster first run (less history to download)
-    python cota_predictor.py --no-tracing          # Jolpica data only
-    python cota_predictor.py --eval-all            # big backtest, all circuits + calibration
-    python cota_predictor.py --mode pre            # force form/pace-only prediction
-    python cota_predictor.py --grid VER,NOR,LEC    # override the grid (e.g. after penalties)
-    python cota_predictor.py --plot --no-backtest
-    python cota_predictor.py --trace-plot 2025      # race-trace chart of that year's COTA race
+    pip install -r requirements.txt
+    python cota_predictor_improved.py                       # backtest + upcoming COTA forecast
+    python cota_predictor_improved.py --tracing-from 2022    # download less history
+    python cota_predictor_improved.py --no-tracing --no-env  # Jolpica data only
+    python cota_predictor_improved.py --eval-all             # all-circuit evaluation
+    python cota_predictor_improved.py --mode pre             # form/pace-only prediction
+    python cota_predictor_improved.py --grid VER,NOR,LEC     # grid override after qualifying
+    python cota_predictor_improved.py --plot --no-backtest
+    python cota_predictor_improved.py --trace-plot 2025       # that year's COTA race trace
 """
 import argparse
 import datetime as dt
@@ -99,6 +101,7 @@ XGB_CLF = dict(n_estimators=200, max_depth=3, learning_rate=0.05, subsample=0.8,
 
 
 def get_features(mode, pace, env=False):
+    """Return feature names for the prediction mode and available optional data."""
     f = list(FEATURES_PRE)
     if pace:
         f += FEATURES_PACE
@@ -179,6 +182,7 @@ def dnf_cause(status):
 
 
 def load_history(first_season, last_season):
+    """Load Jolpica results and qualifying for an inclusive range of seasons."""
     rows = []
     this_year = dt.date.today().year
     for season in range(first_season, last_season + 1):
@@ -216,6 +220,7 @@ def load_history(first_season, last_season):
 
 
 def cota_race(season):
+    """Return the season's scheduled COTA race, or None when absent."""
     sched = jget(f"{season}.json", ttl=3600)["MRData"]["RaceTable"]["Races"]
     return next((r for r in sched if r["Circuit"]["circuitId"] == CIRCUIT_ID), None)
 
@@ -227,6 +232,7 @@ WX_FAILS = {}
 
 
 def _wx_fail(reason):
+    """Count an unavailable-weather reason and return the missing-data sentinel."""
     WX_FAILS[reason] = WX_FAILS.get(reason, 0) + 1
     return None
 
@@ -272,9 +278,11 @@ def fetch_weather(lat, lon, date, time_utc):
     i = times.index(target)
 
     def seg(k):
+        """Extract available hourly values from the race-start weather window."""
         return [v for v in (h.get(k) or [])[i:i + 3] if v is not None]
 
     def mean(k):
+        """Average a weather variable over the window, or return NaN if absent."""
         v = seg(k)
         return float(np.mean(v)) if v else np.nan
 
@@ -311,6 +319,7 @@ def load_weather(races):
 # TracingInsights: lap data -> car / driver pace
 # --------------------------------------------------------------------------- #
 def _norm(s):
+    """Normalize an event name for accent- and punctuation-insensitive matching."""
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
     return re.sub(r"[^a-z0-9]", "", s.replace("grand prix", ""))
 
@@ -333,6 +342,7 @@ def list_event_folders(season):
 
 
 def match_folder(race_name, folders):
+    """Find the corresponding event folder, falling back to the original name."""
     if race_name in folders:
         return race_name
     t = _norm(race_name)
@@ -346,10 +356,12 @@ def match_folder(race_name, folders):
 
 
 def _col(df, name):
+    """Return a column or an all-NaN series aligned to the frame's index."""
     return df[name] if name in df.columns else pd.Series(np.nan, index=df.index)
 
 
 def _bool(series):
+    """Identify literal Boolean True values in a session-data series."""
     return series.map(lambda x: x is True)
 
 
@@ -436,6 +448,7 @@ def summarise_session(data, session):
 
 
 def fetch_session_summary(season, event, session):
+    """Load a cached or downloaded lap summary, returning None if unavailable."""
     f = CACHE / f"ti5_{season}_{_norm(event)}_{session}.json"
     if f.exists() and (season < dt.date.today().year or time.time() - f.stat().st_mtime < 3600):
         return json.loads(f.read_text())
@@ -506,6 +519,7 @@ def load_tracing(races, first_season):
 # Feature engineering  (every form feature only uses information from PRIOR races)
 # --------------------------------------------------------------------------- #
 def _roll(s, w):
+    """Calculate a rolling mean of prior values, excluding the current row."""
     return s.shift().rolling(w, min_periods=1).mean()
 
 
@@ -513,6 +527,7 @@ WX_COLS = ["air_temp", "humidity", "wind", "cloud", "precip_mm", "rain_prob", "e
 
 
 def add_features(df, tr=None, wx=None):
+    """Merge optional data and derive grid features and prior-race form statistics."""
     df = df.copy()
     TR_COLS = ("q_gap_pct", "r_gap_pct", "ts_gap", "lap1_pos", "sc", "rts_gap", "vmax", "pit_rel", "pit_slow")
     for c in TR_COLS + tuple(WX_COLS):
@@ -730,6 +745,7 @@ def backtest(df, mode, variants, start_year=2016):
         winner = race.loc[race["position"] == 1, "code"].iloc[0]
 
         def score(rank, win_code, pod_codes):
+            """Score position error, winner accuracy, and podium hits for this race."""
             return dict(mae=(rank - race["position"]).abs().mean(), win=float(win_code == winner),
                         pod=len(actual_pod & set(pod_codes)))
         acc["baseline"].append(score(b_rank, race.loc[b_rank.idxmin(), "code"],
@@ -774,11 +790,13 @@ def _hits(p, col, best, k):
 
 
 def _logloss(pr, y):
+    """Compute binary log loss after clipping probabilities away from zero and one."""
     pr = np.clip(pr, 1e-4, 1 - 1e-4)
     return float(-(y * np.log(pr) + (1 - y) * np.log(1 - pr)).mean())
 
 
 def _calib(p, col, y, bins, title):
+    """Print predicted and observed event rates within probability bins."""
     t = pd.DataFrame({"p": p[col].to_numpy(), "y": np.asarray(y, dtype=float)})
     t["bin"] = pd.cut(t["p"], bins, right=False)
     g = t.groupby("bin", observed=True).agg(n=("y", "size"), said=("p", "mean"), actual=("y", "mean"))
@@ -824,6 +842,7 @@ def eval_all(df, mode, variants, n_seasons=4, step=3):
     print(f"\n=== ALL-CIRCUIT backtest | {mode}-qualifying | {n} races, {sea[0]}-{sea[-1]} "
           f"| refit every {step} races ===")
     def per_race(p, win_col, pod_col, rank_col):
+        """Collect winner hits, podium hits, and mean position error for each race."""
         w, pod = _hits(p, win_col[0], win_col[1], 1), _hits(p, pod_col[0], pod_col[1], 3)
         rk = p.groupby("race_idx")[rank_col].rank(method="first")
         mae = (rk - p["position"]).abs().groupby(p["race_idx"]).mean()
@@ -846,6 +865,7 @@ def eval_all(df, mode, variants, n_seasons=4, step=3):
     idx = rng.integers(0, n, size=(2000, n))
 
     def boot(x):
+        """Return the central 95% bootstrap interval for a mean race metric."""
         return np.percentile(np.asarray(x, float)[idx].mean(axis=1), [2.5, 97.5])
 
     print(f"\n  How sure are these numbers? 95% range if the {n} races were drawn again (bootstrap)")
@@ -933,6 +953,7 @@ def eval_all(df, mode, variants, n_seasons=4, step=3):
 # Predict the upcoming COTA race
 # --------------------------------------------------------------------------- #
 def build_upcoming(hist, season, mode, grid_override):
+    """Build COTA entries and qualifying inputs, validating any grid override."""
     race = cota_race(season)
     if race is None:
         sys.exit(f"No COTA race found on the {season} calendar.")
@@ -1009,14 +1030,17 @@ def _c(text, code=None, bold=False):
 
 
 def _pc(p):                                   # colour for "chance of something good"
+    """Choose a terminal colour for a win, podium, or points probability."""
     return 46 if p >= .40 else 82 if p >= .20 else 226 if p >= .10 else 252 if p >= .02 else 240
 
 
 def _dc(p):                                   # colour for "chance of retiring"
+    """Choose a terminal colour for a retirement probability."""
     return 196 if p >= .25 else 214 if p >= .15 else 245
 
 
 def render_prediction(pred, season, name, mode, pace, env, dnf_base):
+    """Print the forecast table, optional data summaries, and interpretation notes."""
     d = pred.copy()
     d["p_dnf_show"] = 0.5 * d["p_dnf"] + 0.5 * dnf_base      # shrunk: the retirement model had no proven skill
     tc = lambda cid: TEAM_COLOR.get(cid, 255)
@@ -1089,6 +1113,7 @@ def render_prediction(pred, season, name, mode, pace, env, dnf_base):
 
 
 def predict_upcoming(hist, tr, wx, season, mode, grid_override, plot):
+    """Fit on earlier races and save the upcoming COTA forecast and metadata."""
     up, rnd, name, mode = build_upcoming(hist, season, mode, grid_override)
     full = add_features(pd.concat([hist, up], ignore_index=True), tr, wx)
     pace, env = tr is not None, wx is not None
@@ -1175,6 +1200,7 @@ def plot_race_trace(season, race_name=None, out="race_trace.png"):
 
 # --------------------------------------------------------------------------- #
 def main():
+    """Parse options, load data, and run the requested evaluation and forecast."""
     ap = argparse.ArgumentParser(description="Predict the COTA race winner & podium")
     ap.add_argument("--season", type=int, default=dt.date.today().year)
     ap.add_argument("--first-season", type=int, default=2014, help="start of training data")
@@ -1233,6 +1259,7 @@ def main():
     pace, env = tr is not None, wx is not None
 
     def make_variants(m):
+        """Build comparable feature variants from the optional data that loaded."""
         v = {"Jolpica results only": get_features(m, False, False)}
         if pace:
             v["+ car pace (TracingInsights)"] = get_features(m, True, False)

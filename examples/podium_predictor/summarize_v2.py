@@ -14,7 +14,20 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
+def methodology_lines(manifest):
+    """Describe the evaluation year and refit cadence recorded for this run."""
+    every = manifest['refit_every']
+    cadence = 'after each race' if every == 1 else f'every {every} races'
+    return [
+        f"Selection/calibration: last {manifest['tuning_races']} races before {manifest['eval_year']}. "
+        f"Evaluation: completed {manifest['eval_year']} races.",
+        f'All forecasts train strictly on earlier races; model refits {cadence}.',
+        f"{manifest['eval_year']} labels do not choose feature variants, recency settings, or temperature.",
+    ]
+
+
 def main():
+    """Write the current run's comparison report and forecast figures."""
     summary = json.loads((ROOT / 'validation_summary.json').read_text())
     manifest = json.loads((ROOT / 'run_manifest.json').read_text())
     old_path = ROOT / 'previous_model_comparison.json'
@@ -22,10 +35,7 @@ def main():
     rows = []
     lines = ['F1 Austin -- version 2 results', '',
              f"Run: {manifest['run_id']}; target race: {manifest['race_date']}.",
-             f"Selection/calibration: last {manifest['tuning_races']} races before {manifest['eval_year']}. "
-             f"Evaluation: completed {manifest['eval_year']} races.",
-             'All forecasts train strictly on earlier races; model refits every three races.',
-             '2026 labels do not choose feature variants, recency settings, or temperature.', '']
+             *methodology_lines(manifest), '']
     labels = {'form_or_grid_baseline': 'Form/grid baseline', 'uniform_core_ranker': 'Uniform-history ranker',
               'selected_raw': 'Selected model, raw', 'selected_calibrated': 'Selected model, calibrated'}
     for mode, report in summary.items():
@@ -98,7 +108,7 @@ def main():
               'Historical post-stage grids use qualifying order, excluding later grid changes.',
               'The joint ranking model does not model shared accidents or strategy directly.',
               'The revised model is experimental; a prospective unseen-weekend test is still needed.',
-              'See README_V2.txt for commands and detailed methodology.']
+              'See README.md for commands and detailed methodology.']
     (ROOT / 'RESULTS.txt').write_text('\n'.join(lines)+'\n', encoding='utf-8')
     comparisons = pd.DataFrame(rows)
     modes = list(summary)

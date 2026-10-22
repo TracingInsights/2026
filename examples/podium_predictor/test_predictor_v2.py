@@ -17,13 +17,17 @@ from test_predictor import history
 
 
 class ArchiveEvaluationTests(unittest.TestCase):
+    """Cover dated result snapshots and historical evaluation without live entries."""
+
     def dated_history(self):
+        """Build fixture results with races on both sides of a snapshot cutoff."""
         frame = history()
         frame['race_date'] = frame.rnd.map({1: '2026-10-11', 2: '2026-10-21',
                                            3: '2026-10-25', 4: '2026-10-30'})
         return frame
 
     def test_snapshot_filter_includes_boundary_date(self):
+        """Include the cutoff date and preserve history when no cutoff is given."""
         frame = self.dated_history()
         filtered = model.history_through_date(frame, dt.date(2026, 10, 21))
         self.assertEqual(sorted(filtered.rnd.unique()), [1, 2])
@@ -31,6 +35,7 @@ class ArchiveEvaluationTests(unittest.TestCase):
         pd.testing.assert_frame_equal(model.history_through_date(frame), frame)
 
     def test_snapshot_cutoff_requires_evaluation_only(self):
+        """Require historical-only mode whenever a result cutoff is supplied."""
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             model.parse_arguments(['--through-date', '2026-10-21'])
         args = model.parse_arguments(['--evaluate-only', '--through-date', '2026-10-21'])
@@ -38,6 +43,7 @@ class ArchiveEvaluationTests(unittest.TestCase):
         self.assertEqual(args.through_date, dt.date(2026, 10, 21))
 
     def test_invalid_or_empty_snapshot_fails_explicitly(self):
+        """Reject snapshots with no eligible races or invalid race dates."""
         frame = self.dated_history()
         with self.assertRaisesRegex(ValueError, 'No completed races'):
             model.history_through_date(frame, dt.date(2026, 1, 1))
@@ -46,6 +52,7 @@ class ArchiveEvaluationTests(unittest.TestCase):
             model.history_through_date(frame, dt.date(2026, 10, 21))
 
     def test_completed_austin_can_be_evaluated_without_building_live_entries(self):
+        """Evaluate each stage without requesting entries or a live prediction."""
         frame = self.dated_history()
         race = dict(season='2026', round='4', date='2026-10-30', time='20:00:00Z',
                     raceName='United States Grand Prix',
@@ -81,7 +88,10 @@ class ArchiveEvaluationTests(unittest.TestCase):
 
 
 class OrderedPodiumTests(unittest.TestCase):
+    """Check joint podium probabilities and calibration against known outcomes."""
+
     def test_matches_complete_order_enumeration(self):
+        """Match an exhaustive race-order calculation and normalized marginals."""
         scores = np.array([.1, 1., -.5, .7])
         joint, marginal = model.podium_distribution(scores, 1.3)
         expected = np.zeros_like(joint)
@@ -98,6 +108,7 @@ class OrderedPodiumTests(unittest.TestCase):
         self.assertTrue((marginal.sum(axis=1) <= 1+1e-12).all())
 
     def test_no_duplicate_drivers_and_score_shift_invariance(self):
+        """Exclude repeated podium drivers and ignore a common score offset."""
         scores = np.linspace(-3, 3, 22)
         joint, marginal = model.podium_distribution(scores)
         shifted, _ = model.podium_distribution(scores+100)
@@ -107,6 +118,7 @@ class OrderedPodiumTests(unittest.TestCase):
         self.assertTrue((marginal[:, 0] <= marginal.sum(axis=1)+1e-12).all())
 
     def test_temperature_learns_from_out_of_sample_races(self):
+        """Recover synthetic dispersion and improve later-race log loss."""
         rng = np.random.default_rng(13)
         pieces = []
         for rnd in range(350):
@@ -124,7 +136,10 @@ class OrderedPodiumTests(unittest.TestCase):
 
 
 class ChronologyTests(unittest.TestCase):
+    """Guard feature chronology and race-group weighting in model fitting."""
+
     def test_historical_grid_does_not_use_later_penalties(self):
+        """Replace final result grids with qualifying order for historical rows."""
         raw = history()
         frame = raw.copy()
         frame['race_idx'] = frame.rnd-1
@@ -134,10 +149,12 @@ class ChronologyTests(unittest.TestCase):
         self.assertTrue((corrected.loc[corrected.driverId == 'd0', 'grid'] == 1).all())
 
     def test_walk_forward_never_fits_future_races(self):
+        """Ensure every training block ends before its prediction block begins."""
         frame = history()
         frame['race_idx'] = frame.rnd-1
         seen = []
         def fake_fit(train, test, mode, config):
+            """Record prediction blocks while asserting strict training chronology."""
             self.assertLess(train.race_idx.max(), test.race_idx.min())
             seen.append(test.race_idx.unique().tolist())
             out = test.copy()
@@ -150,6 +167,7 @@ class ChronologyTests(unittest.TestCase):
         self.assertEqual(len(next(iter(pred.values()))), 36)
 
     def test_current_team_form_excludes_current_result(self):
+        """Keep a race's form features independent of its finishing results."""
         frame = history()
         frame['race_idx'] = frame.rnd-1
         first = model.extra_form(frame)
@@ -159,6 +177,7 @@ class ChronologyTests(unittest.TestCase):
         pd.testing.assert_frame_equal(first.loc[first.rnd <= 3, cols], changed.loc[changed.rnd <= 3, cols])
 
     def test_ranker_has_query_weights_not_driver_weights(self):
+        """Pass one recency weight per race rather than per driver row."""
         frame = history()
         frame['race_idx'] = frame.rnd-1
         frame = model.extra_form(frame)
@@ -169,11 +188,20 @@ class ChronologyTests(unittest.TestCase):
                 frame[c] = 1.
         captured = {}
         class FakeRanker:
-            def __init__(self, **kwargs): pass
+            """Capture fit options while returning deterministic test scores."""
+
+            def __init__(self, **kwargs):
+                """Accept production constructor options without fitting a model."""
+                pass
+
             def fit(self, x, y, **kwargs):
+                """Capture race weights and provide a feature-importance placeholder."""
                 captured.update(kwargs)
                 self.feature_importances_ = np.ones(x.shape[1])/x.shape[1]
-            def predict(self, x): return np.zeros(len(x))
+
+            def predict(self, x):
+                """Return one neutral score for each requested driver."""
+                return np.zeros(len(x))
         with patch.object(model, 'XGBRanker', FakeRanker):
             model.fit_scores(frame[frame.rnd < 4], frame[frame.rnd == 4], 'pre',
                              dict(half_life=1, window=0, extended=False))
@@ -182,13 +210,17 @@ class ChronologyTests(unittest.TestCase):
 
 
 class WeekendDataTests(unittest.TestCase):
+    """Verify forecast publication cutoffs and session data availability."""
+
     def test_forecast_run_allows_publication_time(self):
+        """Select a weather initialization with enough time for publication."""
         cutoff = dt.datetime(2026, 10, 21, 7, 59, tzinfo=data.UTC)
         run = data.forecast_run(cutoff)
         self.assertEqual(run.hour, 18)
         self.assertLessEqual(run+dt.timedelta(hours=8), cutoff)
 
     def test_forecast_uses_explicit_archive_run_not_realized_weather(self):
+        """Use a forecast archive run and the race-window weather values."""
         race = dict(date='2026-10-25', time='20:00:00Z', Circuit={'Location': {'lat': '30', 'long': '-97'}})
         cutoff = dt.datetime(2026, 10, 21, 8, tzinfo=data.UTC)
         payload = {'hourly': {'time': ['2026-10-25T20:00', '2026-10-25T21:00', '2026-10-25T22:00'],
@@ -203,6 +235,7 @@ class WeekendDataTests(unittest.TestCase):
         self.assertEqual(values['forecast_temp'], 26.)
 
     def test_rain_overlaps_half_hour_race_start(self):
+        """Weight precipitation intervals by overlap with a half-hour race start."""
         race = dict(date='2026-10-25', time='20:30:00Z', Circuit={'Location': {'lat': '30', 'long': '-97'}})
         payload = {'hourly': {'time': [f'2026-10-25T{h}:00' for h in [20, 21, 22, 23]],
                     'temperature_2m': [20, 21, 22, 23], 'precipitation': [99, 2, 4, 6],
@@ -213,6 +246,7 @@ class WeekendDataTests(unittest.TestCase):
         self.assertAlmostEqual(values['forecast_temp'], 21.5)
 
     def test_practice_excludes_future_laps(self):
+        """Ignore post-cutoff laps without changing eligible practice metrics."""
         cutoff = dt.datetime(2026, 10, 23, 20, tzinfo=data.UTC)
         rows = []
         for d in range(4):
@@ -234,6 +268,7 @@ class WeekendDataTests(unittest.TestCase):
         self.assertFalse(audit['fuel_load_known'])
 
     def test_missing_weather_run_falls_back_only_to_earlier_initialization(self):
+        """Fall back to an earlier forecast when the preferred archive is missing."""
         race = dict(date='2026-10-25', time='20:00:00Z', Circuit={'Location': {'lat': '30', 'long': '-97'}})
         cutoff = dt.datetime(2026, 10, 21, 8, tzinfo=data.UTC)
         payload = {'hourly': {'time': ['2026-10-25T20:00', '2026-10-25T21:00', '2026-10-25T22:00'],
@@ -245,11 +280,13 @@ class WeekendDataTests(unittest.TestCase):
         self.assertEqual(len(audit['attempted_runs']), 2)
 
     def test_unavailable_practice_is_explicit(self):
+        """Return empty metrics and a zero-lap audit for missing practice data."""
         metrics, audit = data.practice_summary({}, dt.datetime.now(data.UTC))
         self.assertEqual(metrics, {})
         self.assertEqual(audit['clean_laps'], 0)
 
     def test_sprint_positions_exclude_laps_after_cutoff(self):
+        """Determine sprint positions using only laps available by the cutoff."""
         raw = dict(drv=['A', 'A', 'B'], lap=[1, 2, 1], pos=[1, 2, 2],
                    lSD=['2026-10-23T13:00:00', '2026-10-23T14:30:00', '2026-10-23T13:00:00'],
                    time=[90, 90, 91])
@@ -257,6 +294,7 @@ class WeekendDataTests(unittest.TestCase):
         self.assertEqual(positions, {'A': 1., 'B': 2.})
 
     def test_offline_uses_cached_event_aliases(self):
+        """Resolve offline session names from cached event directory aliases."""
         import tempfile
         from pathlib import Path
         frame = pd.DataFrame(dict(season=[2026], rnd=[16], race_idx=[0],

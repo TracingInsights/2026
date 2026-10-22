@@ -9,8 +9,12 @@ import datetime as dt
 import gzip
 import hashlib
 import json
+import os
+import tempfile
 import time
 import threading
+import warnings
+import zlib
 from pathlib import Path
 from urllib.parse import quote
 
@@ -31,10 +35,12 @@ WEATHER_DOWNLOAD = threading.Semaphore(1)
 
 
 def timestamp(date, clock=None):
+    """Parse a calendar date and optional race clock as an aware UTC timestamp."""
     return dt.datetime.fromisoformat(date + 'T' + (clock or '13:00:00Z')).astimezone(UTC)
 
 
 def cutoff_for(race, mode):
+    """Return the fixed historical prediction cutoff for the requested stage."""
     start = timestamp(race['date'], race.get('time'))
     if mode == 'pre':
         return start - dt.timedelta(hours=108)  # Wednesday morning for a Sunday afternoon race
@@ -45,20 +51,68 @@ def cutoff_for(race, mode):
 
 
 def forecast_run(cutoff):
+    """Choose the latest six-hour initialization with an eight-hour availability buffer."""
     available = cutoff - dt.timedelta(hours=8)
     return available.replace(hour=(available.hour // 6) * 6, minute=0, second=0, microsecond=0)
 
 
+def _read_cache(path):
+    """Read a complete gzip JSON cache envelope or reject its structure."""
+    with gzip.open(path, 'rt', encoding='utf-8') as stream:
+        saved = json.load(stream)
+    if not isinstance(saved, dict) or 'data' not in saved or saved.get('status') != 'ok':
+        raise ValueError('Invalid cache envelope')
+    return saved['data'], saved['status']
+
+
+def _atomic_cache_write(path, envelope):
+    """Replace a cache only after its unique same-directory gzip file is complete."""
+    temporary = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode='w+b', dir=path.parent,
+                                         prefix=f'.{path.name}.', suffix='.tmp', delete=False) as binary:
+            temporary = Path(binary.name)
+            with gzip.open(binary, 'wt', encoding='utf-8') as stream:
+                json.dump(envelope, stream)
+            binary.flush()
+            os.fsync(binary.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError as exc:
+                warnings.warn(f'Could not remove temporary cache file: {type(exc).__name__}: {exc}',
+                              RuntimeWarning, stacklevel=2)
+
+
 def cached_get(url, params=None, live=False, offline=False):
-    ROOT.mkdir(parents=True, exist_ok=True)
+    """Return cached or downloaded JSON, recovering from corrupt cache files.
+
+    Offline reads never access the network and report missing, corrupt, or
+    unreadable caches. Successful downloads remain usable if caching fails;
+    a warning reports the write failure while an older cache is left intact.
+    """
     key = hashlib.sha256((url + json.dumps(params or {}, sort_keys=True)).encode()).hexdigest()
     path = ROOT / (key + '.json.gz')
-    if path.exists() and (offline or not live or time.time()-path.stat().st_mtime < 3600):
-        with gzip.open(path, 'rt', encoding='utf-8') as stream:
-            saved = json.load(stream)
-        return saved['data'], saved['status']
+    cache_status = 'not cached'
+    try:
+        cached_stat = path.stat()
+        if offline or not live or time.time()-cached_stat.st_mtime < 3600:
+            try:
+                return _read_cache(path)
+            except (EOFError, ValueError, gzip.BadGzipFile, zlib.error) as exc:
+                cache_status = f'corrupt cache: {type(exc).__name__}'
+            except OSError as exc:
+                cache_status = f'unreadable cache: {type(exc).__name__}'
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        cache_status = f'unreadable cache: {type(exc).__name__}'
     if offline:
-        return None, 'not cached'
+        return None, cache_status
     try:
         # An independent request per worker avoids mutating a shared Session.
         for attempt in range(3):
@@ -80,9 +134,11 @@ def cached_get(url, params=None, live=False, offline=False):
         if response.status_code != 200:
             return None, f'HTTP {response.status_code}: {response.text[:120]}'
         data = response.json()
-        with gzip.open(path, 'wt', encoding='utf-8') as stream:
-            json.dump(dict(data=data, status='ok', url=response.url,
-                           retrieved_utc=dt.datetime.now(UTC).isoformat()), stream)
+        try:
+            _atomic_cache_write(path, dict(data=data, status='ok', url=response.url,
+                                          retrieved_utc=dt.datetime.now(UTC).isoformat()))
+        except (OSError, TypeError, ValueError, zlib.error) as exc:
+            warnings.warn(f'Cache write failed: {type(exc).__name__}: {exc}', RuntimeWarning, stacklevel=2)
         return data, 'ok'
     except (requests.RequestException, ValueError) as exc:
         return None, f'{type(exc).__name__}: {str(exc)[:100]}'
@@ -152,6 +208,7 @@ def practice_summary(data, cutoff):
 
 
 def session_positions(data, cutoff):
+    """Return each driver's last recorded position from laps completed by the cutoff."""
     required = ['drv', 'lap', 'pos', 'lSD', 'time']
     if not all(c in data for c in required):
         return {}
@@ -164,6 +221,7 @@ def session_positions(data, cutoff):
 
 
 def weather_for(race, cutoff, offline=False):
+    """Summarize the race window from an available archived initialization and audit it."""
     run = forecast_run(cutoff)
     if run < dt.datetime(2024, 3, 14, tzinfo=UTC):
         return {}, dict(status='outside ECMWF archive', cutoff=cutoff.isoformat())
@@ -213,6 +271,7 @@ def weather_for(race, cutoff, offline=False):
 
 
 def weekend_for(race, mode, cutoff=None, weather=True, practice=True, offline=False, folders=None):
+    """Collect cutoff-gated weather, practice and sprint features for one weekend."""
     cutoff = cutoff or cutoff_for(race, mode)
     audit = dict(season=int(race['season']), rnd=int(race['round']), mode=mode,
                  cutoff=cutoff.isoformat(), sessions=[])
@@ -274,6 +333,7 @@ def attach_weekends(frame, calendars, mode, now=None, weather=True, practice=Tru
         tasks.append((race, cutoff))
     audits = []
     def work(task):
+        """Download one independent weekend and preserve its calendar identity."""
         race, cutoff = task
         values, audit = weekend_for(race, mode, cutoff, weather, practice, offline, folders.get(int(race['season'])))
         return race, values, audit

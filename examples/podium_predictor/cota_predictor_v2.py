@@ -4,6 +4,7 @@
 Run: python cota_predictor_v2.py --mode all
 Offline repeat: python cota_predictor_v2.py --mode all --offline
 No new data: python cota_predictor_v2.py --no-weekend-data --offline
+Historical evaluation only: python cota_predictor_v2.py --evaluate-only --mode all
 
 Pre: Wednesday, 108 h before race. Practice: 1 h before qualifying.
 Post: 2 h before race. Auto uses the latest stage whose cutoff has passed.
@@ -36,7 +37,9 @@ RECENCY = [('all_history', 0, 0), ('half_life_24', 24, 0),
 
 
 def save_json(path, obj):
+    """Write JSON, converting NumPy scalars and nonfinite floats for portability."""
     def clean(x):
+        """Recursively normalize containers and numeric values for JSON encoding."""
         if isinstance(x, dict):
             return {str(k): clean(v) for k, v in x.items()}
         if isinstance(x, (list, tuple)):
@@ -50,6 +53,7 @@ def save_json(path, obj):
 
 
 def strengths(scores, temperature=1):
+    """Convert finite scores into positive temperature-scaled race strengths."""
     scores = np.asarray(scores, dtype=float)
     if not np.isfinite(scores).all() or temperature <= 0:
         raise ValueError('Finite scores and a positive temperature are required')
@@ -78,6 +82,7 @@ def podium_distribution(scores, temperature=1):
 
 
 def order_logloss(race, temperature):
+    """Return negative log probability of a race's observed ordered podium."""
     w = strengths(race.score.to_numpy(), temperature)
     order = np.argsort(race.position.to_numpy(), kind='stable')[:3]
     remaining, loss = w.sum(), 0.
@@ -88,6 +93,7 @@ def order_logloss(race, temperature):
 
 
 def calibration_temperature(predictions):
+    """Fit one temperature using chronological out-of-sample podium outcomes."""
     races = [g for _, g in predictions.groupby('race_idx', sort=True)]
     if len(races) < 8:
         raise ValueError('At least eight chronological out-of-sample races are required for calibration')
@@ -97,6 +103,7 @@ def calibration_temperature(predictions):
 
 
 def scored_metrics(predictions, temperature=1):
+    """Return per-race accuracy scores and consistent driver probabilities."""
     metrics, probabilities = [], []
     for _, race in predictions.groupby('race_idx', sort=True):
         race = race.copy()
@@ -122,12 +129,14 @@ def scored_metrics(predictions, temperature=1):
 
 
 def mean_metrics(metrics):
+    """Average evaluation metrics with equal weight for each race."""
     columns = ['winner_hit', 'podium_hits', 'podium_set_hit', 'ordered_podium_hit',
                'win_brier', 'podium_brier', 'ordered_top3_logloss', 'position_mae']
     return {c: float(metrics[c].mean()) for c in columns}
 
 
 def configs(allow_weekend=True):
+    """Enumerate recency settings and optionally include weekend features."""
     out = []
     for name, half_life, window in RECENCY:
         for extended in ([False, True] if allow_weekend else [False]):
@@ -137,6 +146,7 @@ def configs(allow_weekend=True):
 
 
 def feature_names(mode, extended):
+    """List the core and optional features available at a prediction stage."""
     features = base.get_features('post' if mode == 'post' else 'pre', False, False) + CORE_EXTRA + TRACK
     if extended:
         features += weekend.WEATHER_FEATURES
@@ -146,6 +156,7 @@ def feature_names(mode, extended):
 
 
 def fit_scores(train, test, mode, config):
+    """Fit a race-grouped ranker on earlier results and score later entries."""
     if train.race_idx.max() >= test.race_idx.min():
         raise ValueError('Training races must strictly precede prediction races')
     train = train.sort_values(['race_idx', 'driverId']).copy()
@@ -174,6 +185,7 @@ def fit_scores(train, test, mode, config):
 
 
 def walk_forward(frame, races, mode, candidates, block=3):
+    """Score race blocks using only results preceding each block's first race."""
     done = frame[frame.position.notna()]
     pieces = {c['name']: [] for c in candidates}
     for start in range(0, len(races), block):
@@ -188,6 +200,7 @@ def walk_forward(frame, races, mode, candidates, block=3):
 
 
 def baseline_scores(frame, mode):
+    """Score drivers by qualifying grid or recent driver and team form."""
     out = frame.copy()
     if mode == 'post':
         out['score'] = -out.grid.astype(float)
@@ -197,6 +210,7 @@ def baseline_scores(frame, mode):
 
 
 def reliability(predictions):
+    """Compare mean forecast probabilities with observed outcomes in bins."""
     rows = []
     for col, target in [('p_win', 1), ('p_podium', 3)]:
         bins = pd.cut(predictions[col], [0, .05, .15, .3, .5, .7, .85, 1.00001], include_lowest=True)
@@ -208,6 +222,7 @@ def reliability(predictions):
 
 
 def evaluate(frame, mode, allow_weekend, eval_year=2026, tuning_races=18, block=3):
+    """Select and calibrate on earlier races, then report held-out-year results."""
     done = frame[frame.position.notna()]
     selection_ids = sorted(done.loc[done.season < eval_year, 'race_idx'].unique())[-tuning_races:]
     test_ids = sorted(done.loc[done.season == eval_year, 'race_idx'].unique())
@@ -268,6 +283,7 @@ def evaluate(frame, mode, allow_weekend, eval_year=2026, tuning_races=18, block=
 
 
 def extra_form(frame):
+    """Add driver and team season form using only preceding race results."""
     out = frame.copy()
     out['drv_season_team_form'] = out.groupby(['driverId', 'constructorId', 'season']).position.transform(
         lambda s: s.shift().rolling(3, min_periods=1).mean())
@@ -299,6 +315,7 @@ def historical_qualifying_grid(frame, raw_history):
 
 
 def final_prediction(frame, mode, chosen, temperature, metadata):
+    """Fit the selected model and save podium forecasts for unfinished entries."""
     test = frame[frame.position.isna()].copy()
     train = frame[frame.position.notna() & (frame.race_idx < test.race_idx.min())]
     pred, training = fit_scores(train, test, mode, chosen)
@@ -336,6 +353,7 @@ def final_prediction(frame, mode, chosen, temperature, metadata):
 
 
 def auto_mode(race, now):
+    """Choose the latest prediction stage whose information cutoff has passed."""
     if now >= cutoff_for_live(race, 'post'):
         return 'post'
     if now >= cutoff_for_live(race, 'practice'):
@@ -344,10 +362,12 @@ def auto_mode(race, now):
 
 
 def cutoff_for_live(race, mode):
+    """Return the scheduled information cutoff for a live prediction stage."""
     return weekend.cutoff_for(race, mode)
 
 
 def parse_arguments(argv=None):
+    """Parse CLI options and reject inconsistent evaluation and training ranges."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--season', type=int, default=dt.datetime.now(weekend.UTC).year)
     ap.add_argument('--first-season', type=int, default=2014)
@@ -389,6 +409,7 @@ def history_through_date(history, through_date=None):
 
 
 def main():
+    """Prepare features, validate models, and optionally produce a live forecast."""
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     args = parse_arguments()
@@ -396,6 +417,7 @@ def main():
     if args.offline:
         original_get = base.jget
         def offline_get(path, params=None, ttl=None):
+            """Read a cached API response or fail without making a network call."""
             import hashlib
             key = hashlib.md5((path+json.dumps(params or {}, sort_keys=True)).encode()).hexdigest()
             source = base.CACHE / (key+'.json')

@@ -35,7 +35,7 @@ Activate the environment (`source .venv/bin/activate` on Linux/macOS, or
 
 ```sh
 python -m pip install -r requirements.txt
-python -m unittest -v test_predictor.py test_predictor_v2.py
+python -m unittest discover -v -p "test_*.py"
 ```
 
 The pinned dependencies are the versions used for the initial Windows/Python

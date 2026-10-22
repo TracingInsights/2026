@@ -9,6 +9,7 @@ ROOT = Path('v2_outputs')
 
 
 def main():
+    """Save walk-forward baseline predictions and metrics using V2 holdout folds."""
     old.XGB_REG['n_jobs'] = 2
     old.XGB_CLF['n_jobs'] = 2
     report = {}
