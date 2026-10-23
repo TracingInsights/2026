@@ -45,9 +45,9 @@
           "items": { "type": "number" }
         },
         "gear": {
-          "description": "Current gear (1-8).",
+          "description": "Current gear (1-8; 0 = neutral, e.g. stationary in the pit lane or after a spin).",
           "type": "array",
-          "items": { "type": "integer", "minimum": 1, "maximum": 8 }
+          "items": { "type": "integer", "minimum": 0, "maximum": 8 }
         },
         "throttle": {
           "description": "Throttle position as a percentage. Values are typically 0-100 but may occasionally exceed 100 due to interpolation or raw sensor values.",

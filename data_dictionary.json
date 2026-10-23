@@ -141,8 +141,8 @@
           "full_name": "Gear",
           "description": "Current gear the car is in",
           "source": "FastF1",
-          "unit": "1-8",
-          "notes": "Notes: F1 uses 8-speed gearboxes"
+          "unit": "0-8",
+          "notes": "Notes: F1 uses 8-speed gearboxes; 0 = neutral"
         },
         "throttle": {
           "full_name": "Throttle Position",

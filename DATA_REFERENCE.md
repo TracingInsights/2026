@@ -75,7 +75,7 @@ A JSON Schema for validating these files is available at [`schemas/telemetry.sch
 | **time** | Time | Time when this data sample was recorded from start of the lap | seconds |  |
 | **rpm** | Revolutions Per Minute | Engine rotations per minute | RPM | Higher on straights, lower in corners |
 | **speed** | Speed | How fast the car is traveling | km/h | Derived from GPS/telemetry sources |
-| **gear** | Gear | Current gear the car is in | 1-8 | F1 uses 8-speed gearboxes |
+| **gear** | Gear | Current gear the car is in | 0-8 | F1 uses 8-speed gearboxes; 0 = neutral |
 | **throttle** | Throttle Position | How much the driver is pressing the throttle pedal | 0-100% | 0% = fully released, 100% = floored |
 | **brake** | Brake | Whether brakes are being applied | Boolean (0/1) | Binary: either braking or not |
 | **drs** | Drag Reduction System | Status of DRS (rear wing flap that reduces drag). The raw FastF1 value is mapped to a binary open/closed state. | 0 or 1 | 0 = Off/closed; 1 = open. Raw FastF1 DRS values of `10`, `12`, or `14` are treated as open. |
