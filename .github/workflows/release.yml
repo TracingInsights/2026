@@ -17,6 +17,9 @@ name: Create Release
 # Tag scheme (valid semver, monotonic):  <year>.<day-of-year>.<build>
 #   e.g. 2026.281.1, 2026.281.2, 2026.282.1 ...
 # jsDelivr "latest" resolution and version listings only work with semver tags.
+#
+# Each new release then starts sync_hf_bucket, so the Hugging Face bucket
+# (the CDN fallback) gets the new files too.
 
 on:
   push:
@@ -27,6 +30,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # gh workflow run sync_hf_bucket.yml
 
 concurrency:
   group: create-release
@@ -132,3 +136,14 @@ jobs:
             --title "Data $RELEASE_TAG" \
             --notes "$RELEASE_NOTES" \
             --latest
+
+      - name: Start the Hugging Face bucket sync
+        # A workflow_dispatch is the one event the default GITHUB_TOKEN can
+        # start another workflow with (a push or release event from it never
+        # does). sync_hf_bucket's concurrency group keeps one run at a time
+        # and only the newest pending one, which uploads every new file.
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run sync_hf_bucket.yml --ref main
