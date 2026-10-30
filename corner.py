@@ -39,6 +39,8 @@ EVENT_SECTIONS_FILE: dict[str, str] = {
     "Belgian Grand Prix": "circuit-de-spa-francorchamps",
     "British Grand Prix": "silverstone",
     "Canadian Grand Prix": "canada",
+    "Chinese Grand Prix": "shanghai-international-circuit",
+    "Japanese Grand Prix": "suzuka-circuit",
     "Dutch Grand Prix": "circuit-zandvoort",
     "Emilia Romagna Grand Prix": "emilia",
     "Hungarian Grand Prix": "hungary",

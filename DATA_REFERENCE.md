@@ -12,6 +12,7 @@ The repository uses two main extraction scripts. They share the same output form
 |---|---|---|---|
 | `R.py` | Per-driver `laptimes.json` and per-lap `{lap}_tel.json` telemetry | `weather.json`, `rcm.json`, `session_info.json`, `drivers.json`, `corners.json` | Full telemetry extraction; uses FastF1 + MultiViewer circuit API fallback. The other session scripts (`Q.py`, `SQ.py`, `SR.py`, `FP1.py`-`FP3.py`, their `_fast` twins and `preseason.py`) write the same session files. |
 | `SessionInfo.py` | None | `session_info.json` | Backfills `session_info.json` into sessions extracted before the scripts wrote it (FastF1 session served from the standalone cache). |
+| `Corners.py` | None | `corners.json` | Rebuilds `corners.json` without a FastF1 session or F1 account: MultiViewer geometry, distances matched against the fastest lap's telemetry in the repository (as FastF1's `add_marker_distance` does), sections by circuit and layout era. Adds or corrects the section fields of current files; rebuilds older-layout files (`CornerNumber`/`X`/`Y`/`Angle`/`Distance`/`Rotation` only) in full. Works on this checkout or a partial clone of another season (`--year`, `--repo`). |
 | `LapTimes.py` | Per-driver `laptimes.json` only | None | Optimized lap-time-only extraction; enriches Race laps with official Ergast lap times and adds OpenF1 mini-sectors (`ms1`, `ms2`, `ms3`) and qualifying segments (`qs`). Also downloads OpenF1 team radio MP3s per session (`DOWNLOAD_TEAM_RADIO`). |
 | `team_radio.py` | Per-driver `radio/*.mp3` | `team_radio.json` | Team radio downloader used by `LapTimes.py`; run standalone to backfill every past session of the season. |
 
@@ -339,7 +340,7 @@ The two producers of `corners.json` store the bands in their own file style:
 - **Object style** (`corner.py`): a `sections` key holding an array of objects, each with the five fields above: `"sections": [{"Type": ..., "StartPercent": ..., "EndPercent": ..., "StartDistance": ..., "EndDistance": ...}, ...]`
 - **Column style** (`R.py`, `Q.py`, `FP1.py`-`FP3.py`, `SQ.py`, `SR.py`, `preseason.py`): parallel column lists — `SectionType`, `SectionStartPercent`, `SectionEndPercent`, `SectionStartDistance`, `SectionEndDistance` — each an array with one entry per section band, alongside the per-corner `Section` array (aligned with `CornerNumber`).
 
-Note: sections are only emitted when a `sections/<circuit>.json` file exists for the circuit; otherwise the band arrays are empty and per-corner `Section` values are `null`.
+Note: sections are only emitted when a `sections/<circuit>.json` file exists for the circuit; otherwise the band arrays are empty and per-corner `Section` values are `null`. Circuits whose layout changed have a `-2018` file for the seasons before the change (Albert Park until 2021, Catalunya and Marina Bay until 2022, Yas Marina until 2020); `Corners.py` picks the file by MultiViewer circuit key and season. Circuits without a file: Istanbul, Portimão, Nürburgring, Mugello, the Sakhir outer track, Las Vegas, Kuala Lumpur and Madring.
 
 ### MultiViewer Circuit Data (column style)
 
