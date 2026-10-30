@@ -26,7 +26,7 @@ import pandas as pd
 import psutil
 import requests
 
-from utils import build_circuit_details, get_mv_circuit_payload
+from utils import build_circuit_details, build_session_info, get_mv_circuit_payload
 
 # ---------------------------------------------------------------------------
 # Constants & Configuration
@@ -1178,6 +1178,8 @@ class SeasonSessionExtractor:
                 f1session.race_control_messages
             )
             _write_json(f"{base_dir}/rcm.json", session_control_messages)
+
+            _write_json(f"{base_dir}/session_info.json", build_session_info(f1session))
 
             drivers_info = self.session_drivers(event_name, session_name, f1session)
             _write_json(f"{base_dir}/drivers.json", drivers_info)

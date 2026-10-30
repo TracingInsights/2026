@@ -1,4 +1,4 @@
-fastf1==3.9.0a0
+fastf1
 orjson
 psutil
 joblib

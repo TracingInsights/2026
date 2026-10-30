@@ -1,9 +1,12 @@
 """Helpers shared by the session extraction scripts."""
 
+import datetime
 import logging
 import math
 from typing import Any, Dict, List, Optional
 
+import numpy as np
+import pandas as pd
 from fastf1.mvapi.api import get_circuit
 
 logger = logging.getLogger(__name__)
@@ -130,4 +133,83 @@ def build_circuit_details(payload: Optional[Dict], circuit_info=None) -> Dict:
         "TrackY": list(payload.get("y") or []),
         "TrackTime": list(payload.get("trackPositionTime") or []),
         "MiniSectorIndex": list(payload.get("miniSectorsIndexes") or []),
+    }
+
+
+def _seconds_or_none(value: Any) -> Optional[float]:
+    """A timedelta as seconds rounded to the millisecond (None for NaT/None)."""
+    if value is None or pd.isna(value):
+        return None
+    return round(pd.Timedelta(value).total_seconds(), 3)
+
+
+def _gmt_offset(value: datetime.timedelta) -> str:
+    """A UTC offset in the live-timing API's own form: ``"-05:00:00"``."""
+    total = int(value.total_seconds())
+    sign = "-" if total < 0 else ""
+    hours, rest = divmod(abs(total), 3600)
+    minutes, seconds = divmod(rest, 60)
+    return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _info_value(value: Any) -> Any:
+    """``Session.session_info`` values as JSON primitives (dates in ISO form)."""
+    if isinstance(value, dict):
+        return {k: _info_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_info_value(v) for v in value]
+    if isinstance(value, datetime.timedelta):
+        return _gmt_offset(value)
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _status_columns(df: Optional[pd.DataFrame], columns: List[str]) -> Dict[str, list]:
+    if df is None or df.empty:
+        return {col: [] for col in columns}
+    out: Dict[str, list] = {"Time": [_seconds_or_none(t) for t in df["Time"]]}
+    for col in columns[1:]:
+        out[col] = [None if pd.isna(v) else str(v) for v in df[col]]
+    return out
+
+
+def _session_attr(f1session, name: str) -> Any:
+    """A loaded FastF1 session attribute, or None when it was not loaded."""
+    try:
+        return getattr(f1session, name)
+    except Exception as e:
+        logger.warning(f"session_info.json: no {name}: {e}")
+        return None
+
+
+def build_session_info(f1session) -> Dict:
+    """session_info.json: the live-timing session state FastF1 reads besides laps.
+
+    ``track_status`` and ``session_status`` are the TrackStatus and
+    SessionStatus streams (times in seconds of session time),
+    ``session_start_time`` the first ``Started`` status, ``t0_date`` the date
+    at session time zero, ``total_laps`` the scheduled race distance (race
+    and sprint only) and ``session_info`` the SessionInfo payload. None of
+    these can be rebuilt exactly from rcm.json, the laps or the schedule.
+    Fields FastF1 did not load are None; this never raises.
+    """
+    t0_date = _session_attr(f1session, "t0_date")
+    total_laps = _session_attr(f1session, "total_laps")
+    info = _session_attr(f1session, "session_info")
+    return {
+        "t0_date": None if t0_date is None or pd.isna(t0_date) else t0_date.isoformat(),
+        "session_start_time": _seconds_or_none(
+            _session_attr(f1session, "session_start_time")
+        ),
+        "total_laps": None if total_laps is None else int(total_laps),
+        "track_status": _status_columns(
+            _session_attr(f1session, "track_status"), ["Time", "Status", "Message"]
+        ),
+        "session_status": _status_columns(
+            _session_attr(f1session, "session_status"), ["Time", "Status"]
+        ),
+        "session_info": _info_value(info) if info is not None else None,
     }

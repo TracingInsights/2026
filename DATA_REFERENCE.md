@@ -10,7 +10,8 @@ The repository uses two main extraction scripts. They share the same output form
 
 | Script | Primary Output | Extra Session Files | Notes |
 |---|---|---|---|
-| `R.py` | Per-driver `laptimes.json` and per-lap `{lap}_tel.json` telemetry | `weather.json`, `rcm.json`, `drivers.json`, `corners.json` | Full telemetry extraction; uses FastF1 + MultiViewer circuit API fallback. |
+| `R.py` | Per-driver `laptimes.json` and per-lap `{lap}_tel.json` telemetry | `weather.json`, `rcm.json`, `session_info.json`, `drivers.json`, `corners.json` | Full telemetry extraction; uses FastF1 + MultiViewer circuit API fallback. The other session scripts (`Q.py`, `SQ.py`, `SR.py`, `FP1.py`-`FP3.py`, their `_fast` twins and `preseason.py`) write the same session files. |
+| `SessionInfo.py` | None | `session_info.json` | Backfills `session_info.json` into sessions extracted before the scripts wrote it (FastF1 session served from the standalone cache). |
 | `LapTimes.py` | Per-driver `laptimes.json` only | None | Optimized lap-time-only extraction; enriches Race laps with official Ergast lap times and adds OpenF1 mini-sectors (`ms1`, `ms2`, `ms3`) and qualifying segments (`qs`). Also downloads OpenF1 team radio MP3s per session (`DOWNLOAD_TEAM_RADIO`). |
 | `team_radio.py` | Per-driver `radio/*.mp3` | `team_radio.json` | Team radio downloader used by `LapTimes.py`; run standalone to backfill every past session of the season. |
 
@@ -60,6 +61,24 @@ Messages sent by Race Control (the officials) to teams about track status, penal
 
 ### What This Means
 When a yellow flag is deployed due to debris in Sector 2, you might see: `{cat: "Flag", msg: "Yellow", flag: "YELLOW", scope: "Sector", sector: 2}`. This tells teams drivers must slow down in that sector.
+
+---
+
+## 🚦 SESSION STATE (`session_info.json`)
+
+The session state FastF1 reads from the F1 live timing feed besides laps: the track status and session status streams, the session start, the date at session time zero, the scheduled race distance and the session metadata. None of it can be rebuilt exactly from `rcm.json`, the laps or the schedule (race control times are whole seconds, and some events, such as a red flag, can appear only as free text). Keys and column names are FastF1's own; a value FastF1 could not load is `null`.
+
+| Key | FastF1 Attribute | Description | Type |
+|---|---|---|---|
+| **t0_date** | `Session.t0_date` | Date at session time zero (all `Time`/`sesT` values count from it) | ISO 8601 string (UTC, millisecond precision) |
+| **session_start_time** | `Session.session_start_time` | Session time of the first `Started` session status. For a Race or Sprint this is the start of the formation lap and equals lap 1's `lST` | seconds |
+| **total_laps** | `Session.total_laps` | Scheduled race distance in laps; `null` for practice and qualifying | Integer |
+| **track_status** | `Session.track_status` | Track status changes as columns `Time` (session time, seconds), `Status` (code, see [Track Status Reference](#track-status-reference)) and `Message` (`"AllClear"`, `"Yellow"`, `"SCDeployed"`, `"Red"`, `"VSCDeployed"`, `"VSCEnding"`). The first row is the status at the start of the feed, which is not always `"1"` | Object of lists |
+| **session_status** | `Session.session_status` | Session status changes as columns `Time` (session time, seconds) and `Status` (`"Inactive"`, `"Started"`, `"Aborted"`, `"Finished"`, `"Finalised"`, `"Ends"`) | Object of lists |
+| **session_info** | `Session.session_info` | The live timing `SessionInfo` payload: `Meeting` (`Key`, `Name`, `OfficialName`, `Location`, `Number`, `Country`, `Circuit`), `ArchiveStatus`, `Key`, `Type`, `Name`, `StartDate`/`EndDate` (local time), `GmtOffset`, `Path` | Object; dates as ISO 8601 strings, `GmtOffset` as `"-05:00:00"` |
+
+### What This Means
+A red flag shows up as a `"5"` row in `track_status` and an `"Aborted"` row in `session_status`, followed by `"Started"` when the session resumes. In qualifying, each segment (Q1, Q2, Q3) has its own `"Started"` and `"Finished"` rows.
 
 ---
 

@@ -114,6 +114,47 @@
         }
       }
     },
+    "session_info.json": {
+      "description": "🚦 SESSION STATE",
+      "fields": {
+        "t0_date": {
+          "full_name": "Session Time Zero Date",
+          "description": "Date at session time zero (all Time/sesT values count from it); FastF1 Session.t0_date",
+          "source": "FastF1 (F1 live timing)",
+          "type": "ISO 8601 string (UTC, millisecond precision)"
+        },
+        "session_start_time": {
+          "full_name": "Session Start Time",
+          "description": "Session time of the first Started session status; for a Race or Sprint the start of the formation lap (equals lap 1's lST); FastF1 Session.session_start_time",
+          "source": "FastF1 (F1 live timing)",
+          "unit": "seconds"
+        },
+        "total_laps": {
+          "full_name": "Total Laps",
+          "description": "Scheduled race distance in laps; null for practice and qualifying; FastF1 Session.total_laps",
+          "source": "FastF1 (F1 live timing)",
+          "type": "Integer"
+        },
+        "track_status": {
+          "full_name": "Track Status",
+          "description": "Track status changes as columns Time (session time, seconds), Status (code '1'-'7', see the Track Status Reference) and Message; the first row is the status at the start of the feed; FastF1 Session.track_status",
+          "source": "FastF1 (F1 live timing)",
+          "values": "Message: \"AllClear\", \"Yellow\", \"SCDeployed\", \"Red\", \"VSCDeployed\", \"VSCEnding\""
+        },
+        "session_status": {
+          "full_name": "Session Status",
+          "description": "Session status changes as columns Time (session time, seconds) and Status; FastF1 Session.session_status",
+          "source": "FastF1 (F1 live timing)",
+          "values": "\"Inactive\", \"Started\", \"Aborted\", \"Finished\", \"Finalised\", \"Ends\""
+        },
+        "session_info": {
+          "full_name": "Session Info",
+          "description": "The live timing SessionInfo payload (Meeting, ArchiveStatus, Key, Type, Name, StartDate, EndDate, GmtOffset, Path); FastF1 Session.session_info",
+          "source": "FastF1 (F1 live timing)",
+          "type": "Object; dates as ISO 8601 strings (local time), GmtOffset as \"-05:00:00\""
+        }
+      }
+    },
     "tel.json": {
       "description": "🎯 TELEMETRY DATA",
       "fields": {

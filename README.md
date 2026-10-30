@@ -26,7 +26,7 @@ It covers all telemetry, timing, weather, race control, driver, and circuit/corn
 
 ## 📁 Repository Structure
 
-Each Grand Prix weekend is organized by event and session. Inside each session folder you will find JSON files for drivers, race control messages, circuit corners, lap times, and weather.
+Each Grand Prix weekend is organized by event and session. Inside each session folder you will find JSON files for drivers, race control messages, session state (track and session status), circuit corners, lap times, and weather.
 
 ```text
 2026/
@@ -34,6 +34,7 @@ Each Grand Prix weekend is organized by event and session. Inside each session f
 │   ├── Practice 1/
 │   │   ├── drivers.json
 │   │   ├── rcm.json
+│   │   ├── session_info.json
 │   │   ├── corners.json
 │   │   ├── session_laptimes.json
 │   │   ├── team_radio.json

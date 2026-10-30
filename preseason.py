@@ -16,7 +16,7 @@ import pandas as pd
 import psutil
 import requests
 
-from utils import build_circuit_details, get_mv_circuit_payload
+from utils import build_circuit_details, build_session_info, get_mv_circuit_payload
 
 _original_make_path = fastf1._api.make_path
 
@@ -1197,6 +1197,8 @@ class PreSeasonExtractor:
             _write_json(
                 f"{base_dir}/rcm.json", race_control_messages, normalize_missing=True
             )
+
+            _write_json(f"{base_dir}/session_info.json", build_session_info(f1session))
 
             drivers_info = self.session_drivers(test_number, session_number)
             _write_json(f"{base_dir}/drivers.json", drivers_info)
