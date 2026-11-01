@@ -773,7 +773,10 @@ class SeasonSessionExtractor:
             if drv_laps.empty:
                 continue
 
-            if len(drv_laps) == 1 and bool(drv_laps["FastF1Generated"].iloc[0]):
+            # FastF1 already generated this driver's last lap (first-lap crash
+            # or retired on track); also makes repeat calls on cached sessions
+            # a no-op instead of appending another lap each time.
+            if bool(drv_laps["FastF1Generated"].iloc[-1]):
                 continue
 
             ref_time = drv_laps["Time"].iloc[-1]
