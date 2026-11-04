@@ -23,6 +23,8 @@ This script runs R_fast.py for that one session and rewrites the Race
   race block's snapshot
 * HIR's leftover Saturday tyre stint is removed from TimingAppData until F1
   reuses that stint index for HIR's real second stint
+* DriverList details sent after FastF1's 60-minute cutoff (HIR's team, name
+  and colour) are folded into the first race-day declaration
 
 The HTTP cache keeps the raw archive responses; only the copies handed to the
 parsers are rewritten. Livetiming is requested uncompressed: after the archive
@@ -57,6 +59,9 @@ RACE_DAY_UTC = "2026-11-01"
 # real second stint (Compound UNKNOWN reset at raw 1.03:30:58.981, lap 37).
 STALE_STINT_DRIVER = "50"
 STALE_STINT_UNTIL_MS = DAY_MS + ((3 * 60 + 30) * 60 + 58) * 1000 + 981
+# fastf1._api.driver_info() ignores DriverList lines after 60 min; HIR's team
+# and name only arrive at raw 1.02:53:05.568 (01:07:05 after rebasing).
+DRIVER_LIST_CUTOFF_MS = 60 * 60 * 1000
 _TS = re.compile(r"^(?:(\d+)\.)?(\d\d):(\d\d):(\d\d)\.(\d{3})")
 
 
@@ -103,6 +108,24 @@ def _drop_stale_stint(payload: str) -> str:
     return json.dumps(data, separators=(",", ":"), ensure_ascii=False)
 
 
+def _fold_late_driver_info(out: list) -> list:
+    """Move late DriverList details into the first race-day declaration."""
+    if not out:
+        return out
+    head_match = _TS.match(out[0])
+    head = json.loads(out[0][head_match.end():])
+    for record in out[1:]:
+        match = _TS.match(record)
+        if _ms(match) <= DRIVER_LIST_CUTOFF_MS:
+            continue
+        for drv_num, patch in json.loads(record[match.end():]).items():
+            if drv_num in head and isinstance(patch, dict):
+                head[drv_num].update(
+                    {k: v for k, v in patch.items() if k != "Line"})
+    return [head_match.group(0) + json.dumps(
+        head, separators=(",", ":"), ensure_ascii=False)] + out[1:]
+
+
 def repair_stream(page: str, content: bytes) -> bytes:
     """Rewrite one Race .jsonStream body onto a single-day session clock."""
     records = content.decode("utf-8-sig").split("\r\n")[:-1]
@@ -129,6 +152,8 @@ def repair_stream(page: str, content: bytes) -> bytes:
             if payload is None:
                 continue
         out.append(_fmt(t) + payload)
+    if page == "DriverList.jsonStream":
+        out = _fold_late_driver_info(out)
     return ("\r\n".join(out) + "\r\n").encode("utf-8")
 
 
