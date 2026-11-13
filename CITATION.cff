@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this data, please cite it as below."
+type: dataset
+title: "2026: Public F1 telemetry data"
+abstract: >-
+  Free, public Formula 1 telemetry and timing data for the 2026 season:
+  car telemetry, lap times, weather, race control messages, team radio,
+  driver and circuit/corner data for every session of each Grand Prix
+  weekend. Generated from the official Formula 1 live timing data with
+  the open-source FastF1 library.
+authors:
+  - name: TracingInsights
+    website: "https://tracinginsights.com"
+repository-code: "https://github.com/TracingInsights/2026"
+url: "https://github.com/TracingInsights/2026"
+license: Apache-2.0
+date-released: 2026-02-11
+keywords:
+  - Formula 1
+  - F1
+  - motorsport
+  - telemetry
+  - lap times
+  - FastF1
+  - dataset
