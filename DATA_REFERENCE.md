@@ -16,12 +16,14 @@ The repository uses two main extraction scripts. They share the same output form
 | `LapTimes.py` | Per-driver `laptimes.json` only | None | Optimized lap-time-only extraction; enriches Race laps with official Ergast lap times and adds OpenF1 mini-sectors (`ms1`, `ms2`, `ms3`) and qualifying segments (`qs`). Also downloads OpenF1 team radio MP3s per session (`DOWNLOAD_TEAM_RADIO`). |
 | `team_radio.py` | Per-driver `radio/*.mp3` | `team_radio.json` | Team radio downloader used by `LapTimes.py`; run standalone to backfill every past session of the season. |
 | `TeamRadioBackfill.py` | Per-driver `radio/*.mp3` | `team_radio.json` | Downloads the team radio of every session without a `team_radio.json` from the F1 live timing archive (`TeamRadio.jsonStream`; F1 TV token through FastF1), in `team_radio.py`'s layout. Fills sessions OpenF1 has no clips for and seasons before 2023. Works on this checkout or a partial clone of another season (`--year`, `--repo`). |
+| `Overtakes.py` | None | `overtakes.json` (Race, Sprint) | Counts on-track overtakes from F1's live timing running order (five small live timing archive pages per session, no telemetry; F1 TV token through FastF1). Events in `TARGET_EVENT_NAMES_LIST` or on the command line; `--from-dir` counts streams already on disk (backfill, no network). Counting rules in `overtakes_count.py`. Run by the `Overtakes` workflow (`.github/workflows/overtakes.yml`). |
 
 **Data sources:**
 - **FastF1:** base lap timing, telemetry, weather, race control messages, circuit info, driver info.
 - **Ergast/Jolpica:** official Race lap times and positions (used by `LapTimes.py` to overwrite FastF1 Race `LapTime` and `Position`).
 - **OpenF1:** mini-sector segment data and session keys (used by `LapTimes.py` for `ms1`/`ms2`/`ms3`), and team radio recordings (`team_radio.json` + MP3s).
 - **MultiViewer API:** circuit corner geometry fallback when FastF1 circuit info is unavailable.
+- **F1 live timing archive** (`livetiming.formula1.com`, F1 TV sign-in through FastF1 >= 3.9): running order, lap counts, pit and retirement flags, mini-sector loop crossings and track status for `overtakes.json`, and team radio for `TeamRadioBackfill.py`.
 
 ---
 
@@ -305,6 +307,49 @@ Index of the team radio messages broadcast during the session, sorted by time. T
 | **url** | Recording URL | Original recording on `livetiming.formula1.com` | URL string |
 
 Only the clips F1 chooses to broadcast are published, so this is a selection of messages, not the full radio log. Some sessions have no clips at all.
+
+---
+
+## 🔀 OVERTAKES (`overtakes.json`)
+
+Every on-track overtake of a Race or Sprint, counted from F1's own live timing: the running order F1 re-ranks each time a car crosses one of the track's mini-sector timing loops (TimingData `Line`). Written by `Overtakes.py` into the Race and Sprint folders. The file lists every candidate swap in the running order, the ones that count and the ones that don't, each with the reason it was excluded.
+
+How a pass is counted:
+- **Start:** the net change from the starting grid (the last running order more than 150 s before the leader completes lap 1) to the order 5 s after the start. Cars that never leave the pit lane, start from the pit lane, stop or retire on lap 1, or pit before the leader completes lap 2 are left out of it. A red-flag restart is counted the same way.
+- **After that:** every pair of cars whose order flips between two consecutive running orders is a pass by the car that moved ahead. This includes re-passes, passes between team-mates and passes on restart laps.
+- **Not counted:** passes involving a car in the pit lane or leaving it, or a car entering it within 10 s. Also passes made under the Safety Car, the VSC or a red flag; passes involving a retired or stopped car, or one that stops within 180 s; swaps undone within 1 s (timing flicker); and jumps of 4 or more places in one update (timing glitches). Finally, passes on a car that never completes that lap, or that is passed 5 or more times within ±10 s (a very slow car).
+- Lapping and unlapping never appear: the running order is race order.
+
+Checked against F1's official per-driver overtake counts: the mean per-driver error is 0.65 overtakes per session, both in 2026 and in a blind 2025 test. The totals come within 2 % of F1's: 1.4 % high in 2026, and 1784 against 1772 in 2025.
+
+| Field | Description | Type |
+|---|---|---|
+| **format** | File format version (1) | Integer |
+| **algo** | Counting rules version; changes whenever a rule change changes the output | Integer |
+| **source** | `"f1-livetiming"` | String |
+| **year**, **event**, **session** | Season and the event/session folder names | Integer, String, String |
+| **loops** | Number of mini-sector timing loops in each of the 3 timing sectors | Integer array: `[6, 7, 10]` |
+| **drivers** | Driver codes of every car in the session, sorted; `a`, `b` and `totals` index into it | String array |
+| **events** | Every candidate swap, column style, sorted by `t`, then `a`, then `b` (fields below) | Object of equal-length arrays |
+| **totals.made** / **totals.lost** | Overtakes made / suffered per driver (`drivers` order); counted events only (`x` = 0) | Integer arrays |
+
+`events` columns:
+
+| Field | Description | Type |
+|---|---|---|
+| **t** | Session time of the running order that shows the swap, rounded to 0.1 s: the live timing stream clock, which is FastF1's `SessionTime` and the `lST`/`sesT` clock of `laptimes.json` | Seconds |
+| **lap** | Overtaking driver's lap in progress (1 = first lap; the start window is lap 1) | Integer |
+| **a** | Overtaking driver (index into `drivers`) | Integer |
+| **b** | Overtaken driver (index into `drivers`) | Integer |
+| **s** | Timing sector (1-3) of the loop the overtaking car crossed when the running order changed; 0 for the start window or when unknown | Integer |
+| **m** | That loop's index within the lap (0-based, across the three sectors: 0 to sum of `loops` - 1); -1 for the start window or when unknown | Integer |
+| **x** | 0 = counted. Excluded: 1 pit lane, 2 Safety Car / VSC / red flag, 3 retired or stopped car, 4 flicker (undone within 1 s), 5 jump of 4+ places, 6 a car retires within 180 s, 7 a car enters the pits within 10 s, 8 overtaken car never completes the lap, 9 very slow overtaken car, 10 left out of the start window (did not start, pit-lane start, stopped, early pit or retirement) | Integer |
+
+The loop is the overtaking car's mini-sector loop crossing nearest to `t`, within 1 s. F1 publishes the new running order just before the car's loop update arrives. About 99 % of counted passes after the start window have a loop.
+
+The file depends only on F1's streams: re-running `Overtakes.py` gives a byte-identical file. The raw streams are not stored.
+
+**F1 account for the workflow:** F1's live timing archive needs an F1 TV subscription sign-in. The `Overtakes` workflow passes the repository secrets `F1_USERNAME` and `F1_PASSWORD` to FastF1, which signs in with them. The repository owner must add both secrets under Settings → Secrets and variables → Actions. Run locally, FastF1 reuses the token it has stored, or reads the same two environment variables.
 
 ---
 

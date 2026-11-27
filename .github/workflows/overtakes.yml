@@ -1,0 +1,75 @@
+name: Overtakes
+
+on:
+  workflow_dispatch:
+
+
+env:
+  ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+
+jobs:
+  count-overtakes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (scripts only)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            requirements.txt
+            Overtakes.py
+            overtakes_count.py
+            .github/actions/tailscale-exit-node
+          sparse-checkout-cone-mode: false
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+
+      - name: Install dependencies with uv
+        run: |
+          uv pip install --system -r requirements.txt
+
+      - name: Configure Git
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Route FastF1 traffic through phone exit node
+        uses: ./.github/actions/tailscale-exit-node
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          exit-node: ${{ secrets.TS_EXIT_NODE }}
+
+      - name: Count overtakes
+        run: python Overtakes.py
+        env:
+          GITHUB_ACTIONS: "true"
+          # F1 TV account for the live timing archive (FastF1 >= 3.9 signs in with these)
+          F1_USERNAME: ${{ secrets.F1_USERNAME }}
+          F1_PASSWORD: ${{ secrets.F1_PASSWORD }}
+
+      - name: Commit and push changes
+        run: |
+          git config advice.updateSparsePath false
+
+          # Only the overtakes.json files written by the script
+          find . -type f -name "overtakes.json" -not -path "./.git/*" -exec git add --force --sparse {} +
+
+          # Check if there are staged changes
+          if ! git diff --cached --quiet; then
+              git commit -m "Update overtakes"
+              git push origin main
+          else
+              echo "No changes to commit"
+          fi
+        env:
+
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

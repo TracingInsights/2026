@@ -76,8 +76,8 @@ TARGET_EVENT_NAMES_LIST = [
     # "United States Grand Prix",
     # "Mexico City Grand Prix",
     # "São Paulo Grand Prix",
-    "Las Vegas Grand Prix",
-    # "Qatar Grand Prix",
+    # "Las Vegas Grand Prix",
+    "Qatar Grand Prix",
     # "Abu Dhabi Grand Prix",
     # "Bahrain Grand Prix",
 ]
